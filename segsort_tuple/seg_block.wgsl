@@ -42,7 +42,7 @@ R"(
   }
 
   fn unpack_x(val: u32) -> i32 {
-    return (i32(val) & 0xffff) - (0xffff + 1) * ((i32(val) & 0xffff) >> 15u); 
+    return i32(val & 0xffffu); 
   }
 
   fn unpack_y(val: u32) -> i32 {

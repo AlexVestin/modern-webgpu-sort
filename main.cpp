@@ -13,13 +13,18 @@ static const wgpu::BufferUsage copyDstUsage = storageUsage | wgpu::BufferUsage::
 static const wgpu::BufferUsage copySrcUsage = storageUsage | wgpu::BufferUsage::CopySrc;
 static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
 
-int32_t unpack_x(const int2& p) {
-  return (p.x & 0xffff) - (0xffff + 1) * ((p.x & 0xffff) >> 15); 
+uint32_t unpack_x(const uint2& p) {
+  return p.x & 0xffffu; 
 }
 
-std::string PrintPos(const int2& p) {
+uint32_t unpack_y(const uint2& p) {
+  return p.x >> 16u; 
+}
+
+
+std::string PrintPos(const uint2& p) {
   std::stringstream ss;
-  ss << "{ x: " << unpack_x(p) << " y: " << (p.x << 16u) << " }";
+  ss << "{ x: " << unpack_x(p) << " y: " << unpack_y(p) << " }";
   return ss.str(); 
 }
 
@@ -51,17 +56,19 @@ void Test(const wgpu::Device& device) {
     int numSegments = ComputeUtil::div_up(count, 100);
 
     for (uint32_t it = 0; it < iterations; it++)  {
-      std::vector<int2> vec = ComputeUtil::fill_random_pairs(0, INT16_MAX, count);
-      std::vector<int> segments = ComputeUtil::fill_random_cpu(0, count - 1, numSegments, true);
+      std::vector<uint2> vec = ComputeUtil::fill_random_pairs(0, UINT32_MAX, count);
+      std::vector<int> segments = ComputeUtil::fill_random_cpu(0, count - 1, numSegments, true);   
 
-      device.GetQueue().WriteBuffer(inputBuffer, 0, vec.data(), vec.size() * sizeof(int2));
+      device.GetQueue().WriteBuffer(inputBuffer, 0, vec.data(), vec.size() * sizeof(uint2));
       device.GetQueue().WriteBuffer(segmentsBuffer, 0, segments.data(), segments.size() * sizeof(int));
 
-      ComputeUtil::BusyWaitDevice(device);
-      
+      sorter.Upload(device, count, numSegments);
+
       wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
       wgpu::ComputePassEncoder computePass = encoder.BeginComputePass();
       sorter.Sort(device, computePass, count, numSegments);
+      
+
       computePass.End();
       auto commandBuffer = encoder.Finish();
 
@@ -71,9 +78,9 @@ void Test(const wgpu::Device& device) {
       auto t1 = high_resolution_clock::now();
       gpu_time += duration_cast<nanoseconds>(t1-t0).count();
 
-      auto cmp = [](const int2& a, const int2& b) -> bool {
-          int ay = (a.x << 16);
-          int by = (b.x << 16);
+      auto cmp = [](const uint2& a, const uint2& b) -> bool {
+          int ay = unpack_y(a);
+          int by = unpack_y(b);
           if (ay < by) {
             return true;
           }
@@ -85,20 +92,21 @@ void Test(const wgpu::Device& device) {
           return false;
       };
       
-      auto output = ComputeUtil::CopyReadBackBuffer<int2>(device, inputBuffer, count * sizeof(int2));
+      std::vector<uint2> output = ComputeUtil::CopyReadBackBuffer<uint2>(device, inputBuffer, count * sizeof(int2));
+    
 
-      std::vector<int2> copy = vec;
+      std::vector<uint2> copy = vec;
       int cur = 0;
-      for(int seg = 0; seg < segments.size(); ++seg) {
+      for(int seg = 0; seg < segments.size(); seg++) {
         int next = segments[seg];
         std::sort(copy.data() + cur, copy.data() + next, cmp);
         cur = next;
       }
       std::sort(copy.data() + cur, copy.data() + vec.size(), cmp);
 
-      for(int i = 0; i < output.size(); i++) {
-        if(copy[i].x != output[i].x) {
-          std::cerr << "Faulty at count " << count << " " << i << ": " << output[i].x << "," << output[i].y << "  " << copy[i].x << "," << copy[i].y << std::endl;
+      for (int i = 0; i < output.size(); i++) {
+        if (copy[i].x != output[i].x) {
+          std::cerr << "Faulty at count " << count << " - i:" << i << ": " << PrintPos(output[i]) << " expected: " << PrintPos(copy[i]) << std::endl;
           exit(1);
         } 
       }

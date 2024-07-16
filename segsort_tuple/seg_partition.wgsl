@@ -33,7 +33,7 @@ R"(
   var<workgroup> shared_: array<i32, 128>;
 
   fn unpack_x(val: u32) -> i32 {
-    return (i32(val) & 0xffff) - (0xffff + 1) * ((i32(val) & 0xffff) >> 15u); 
+    return i32(val & 0xffffu); 
   }
 
   fn unpack_y(val: u32) -> i32 {
@@ -217,8 +217,7 @@ R"(
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
-    @builtin(num_workgroups) num_workgroups: vec3<u32>,
-
+    @builtin(num_workgroups) num_workgroups: vec3<u32>
   ) {
 
     let pass_ = atomicLoad(&pass_counter.data) / params.num_partition_ctas;

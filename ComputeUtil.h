@@ -11,7 +11,13 @@
 #include <thread>
 
 struct int2 {
-  int32_t x, y;
+  int32_t x;
+  int32_t y;
+};
+
+struct uint2 {
+  uint32_t x;
+  uint32_t y;
 };
 
 namespace ComputeUtil  {
@@ -96,7 +102,7 @@ template <typename T>
     uint32_t divisor = 16
   );
 
-  std::vector<int2> fill_random_pairs(
+  std::vector<uint2> fill_random_pairs(
     int a, 
     int b, 
     size_t count

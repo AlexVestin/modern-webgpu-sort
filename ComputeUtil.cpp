@@ -41,11 +41,11 @@ namespace ComputeUtil  {
         std::cout << std::endl;
     }
 
-    std::vector<int2> fill_random_pairs(int a, int b, size_t count) {
+    std::vector<uint2> fill_random_pairs(int a, int b, size_t count) {
         std::uniform_int_distribution<int> d(a, b);
-        std::vector<int2> data(count);
+        std::vector<uint2> data(count);
 
-        for (int2& i : data) {
+        for (uint2& i : data) {
             i.x = d(get_mt19937());
             i.y = d(get_mt19937());
         }
@@ -82,7 +82,9 @@ namespace ComputeUtil  {
 
     int find_log2(int x, bool round_up) {
         int a = 31 - clz(x);
-        if(round_up) a += !is_pow2(x);
+        if (round_up) { 
+            a += !is_pow2(x); 
+        }
         return a;
     } 
 

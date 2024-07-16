@@ -126,7 +126,6 @@ void SegmentedSort::InitBlock(
     , "Sort::blockPipeline0"
   );
 
-
   blockBindGroups[0] = utils::MakeBindGroup(
     device, bgl0,
         {
