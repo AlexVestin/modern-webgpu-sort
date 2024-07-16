@@ -41,26 +41,8 @@ R"(
     return c;
   }
 
-  fn unpack_x(val: u32) -> i32 {
-    return i32(val & 0xffffu); 
-  }
-
-  fn unpack_y(val: u32) -> i32 {
-    return i32(val >> 16u);
-  }
-
   fn comp(a_key: u32, b_key: u32) -> bool {
-    let ay = unpack_y(a_key);
-    let by = unpack_y(b_key);
-    if (ay < by) {
-      return true;
-    }
-
-    if (ay == by) {
-      return unpack_x(a_key) < unpack_x(b_key);
-    }
-
-    return false;
+    return a_key < b_key;
   }
 
   fn mem_to_reg_strided(global_offset: u32, tid: u32, count: u32) {

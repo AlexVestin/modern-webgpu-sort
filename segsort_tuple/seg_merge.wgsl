@@ -26,26 +26,8 @@ R"(
   var<workgroup> shared_: array<vec2<u32>, 1921>;
   var<private> local_keys: array<vec2<u32>, 15>;
 
-  fn unpack_x(val: u32) -> i32 {
-    return i32(val & 0xffffu); 
-  }
-
-  fn unpack_y(val: u32) -> i32 {
-    return i32(val >> 16u);
-  }
-
   fn comp(a_key: u32, b_key: u32) -> bool {
-    let ay = unpack_y(a_key);
-    let by = unpack_y(b_key);
-    if (ay < by) {
-      return true;
-    }
-
-    if (ay == by) {
-      return unpack_x(a_key) < unpack_x(b_key);
-    }
-
-    return false;
+    return a_key < b_key;
   }
 
   fn load_two_streams_reg(a: u32, a_count: u32, b: u32, b_count: u32, tid: u32) {

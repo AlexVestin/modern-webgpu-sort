@@ -79,17 +79,7 @@ void Test(const wgpu::Device& device) {
       gpu_time += duration_cast<nanoseconds>(t1-t0).count();
 
       auto cmp = [](const uint2& a, const uint2& b) -> bool {
-          int ay = unpack_y(a);
-          int by = unpack_y(b);
-          if (ay < by) {
-            return true;
-          }
-
-          if (ay == by) {
-            return unpack_x(a) < unpack_x(b);
-          }
-
-          return false;
+        return  a.x < b.x;
       };
       
       std::vector<uint2> output = ComputeUtil::CopyReadBackBuffer<uint2>(device, inputBuffer, count * sizeof(int2));
