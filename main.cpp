@@ -2,6 +2,9 @@
 
 #include <iostream>
 #include "wgpu/NativeUtils.h"
+#include "ComputeUtil.h"
+
+#include <sstream>
 
 static std::unique_ptr<wgpu::Instance> instance;
 
@@ -9,6 +12,104 @@ static const wgpu::BufferUsage storageUsage = wgpu::BufferUsage::Storage;
 static const wgpu::BufferUsage copyDstUsage = storageUsage | wgpu::BufferUsage::CopyDst;
 static const wgpu::BufferUsage copySrcUsage = storageUsage | wgpu::BufferUsage::CopySrc;
 static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
+
+int32_t unpack_x(const int2& p) {
+  return (p.x & 0xffff) - (0xffff + 1) * ((p.x & 0xffff) >> 15); 
+}
+
+std::string PrintPos(const int2& p) {
+  std::stringstream ss;
+  ss << "{ x: " << unpack_x(p) << " y: " << (p.x << 16u) << " }";
+  return ss.str(); 
+}
+
+
+void Test(const wgpu::Device& device) {
+    const int iterations = 5;
+  
+  SegmentedSort sorter;
+  const uint32_t maxCount = 12000000;
+  int maxNumSegments = ComputeUtil::div_up(maxCount, 100);
+
+  wgpu::Buffer inputBuffer = utils::CreateBuffer(
+    device, 
+    maxCount * sizeof(int2), 
+    wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::CopySrc,
+    "InputBuffer"
+  );
+
+  wgpu::Buffer segmentsBuffer = utils::CreateBuffer(
+    device, 
+    maxNumSegments * sizeof(int), 
+    wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopyDst,
+    "SegmentsBuffer"
+  );
+
+  sorter.Init(device, inputBuffer, maxCount, segmentsBuffer, maxNumSegments);
+  for (uint32_t count = 1920; count < 8000000;  count += count / 10) {
+    uint64_t gpu_time = 0;
+    int numSegments = ComputeUtil::div_up(count, 100);
+
+    for (uint32_t it = 0; it < iterations; it++)  {
+      std::vector<int2> vec = ComputeUtil::fill_random_pairs(0, INT16_MAX, count);
+      std::vector<int> segments = ComputeUtil::fill_random_cpu(0, count - 1, numSegments, true);
+
+      device.GetQueue().WriteBuffer(inputBuffer, 0, vec.data(), vec.size() * sizeof(int2));
+      device.GetQueue().WriteBuffer(segmentsBuffer, 0, segments.data(), segments.size() * sizeof(int));
+
+      ComputeUtil::BusyWaitDevice(device);
+      
+      wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+      wgpu::ComputePassEncoder computePass = encoder.BeginComputePass();
+      sorter.Sort(device, computePass, count, numSegments);
+      computePass.End();
+      auto commandBuffer = encoder.Finish();
+
+      auto t0 = high_resolution_clock::now();
+      device.GetQueue().Submit(1, &commandBuffer);
+      ComputeUtil::BusyWaitDevice(device);
+      auto t1 = high_resolution_clock::now();
+      gpu_time += duration_cast<nanoseconds>(t1-t0).count();
+
+      auto cmp = [](const int2& a, const int2& b) -> bool {
+          int ay = (a.x << 16);
+          int by = (b.x << 16);
+          if (ay < by) {
+            return true;
+          }
+
+          if (ay == by) {
+            return unpack_x(a) < unpack_x(b);
+          }
+
+          return false;
+      };
+      
+      auto output = ComputeUtil::CopyReadBackBuffer<int2>(device, inputBuffer, count * sizeof(int2));
+
+      std::vector<int2> copy = vec;
+      int cur = 0;
+      for(int seg = 0; seg < segments.size(); ++seg) {
+        int next = segments[seg];
+        std::sort(copy.data() + cur, copy.data() + next, cmp);
+        cur = next;
+      }
+      std::sort(copy.data() + cur, copy.data() + vec.size(), cmp);
+
+      for(int i = 0; i < output.size(); i++) {
+        if(copy[i].x != output[i].x) {
+          std::cerr << "Faulty at count " << count << " " << i << ": " << output[i].x << "," << output[i].y << "  " << copy[i].x << "," << copy[i].y << std::endl;
+          exit(1);
+        } 
+      }
+    }
+    std::cout << count << " " << (gpu_time / iterations) / 1000 << std::endl;
+  }
+
+  sorter.Dispose();
+  inputBuffer.Destroy();
+  segmentsBuffer.Destroy();
+}
 
 int main() {
     dawnProcSetProcs(&dawn::native::GetProcs());
@@ -35,15 +136,5 @@ int main() {
     wgpu::Adapter adapter = NativeUtils::SetupAdapter(instance);
     wgpu::Device device = NativeUtils::SetupDevice(instance, adapter);
 
-    uint32_t inputSize = 16u;
-    uint32_t segmentSize = 16u;
-
-    std::vector<uint2> data(inputSize);
-    std::vector<uint32_t> segments(segmentSize);
-
-    wgpu::Buffer segmentBuffer = utils::CreateBufferFromData(device, segments.data(), segments.size() * sizeof(uint2), copyDstUsage,  "SegmentsBuffer");
-    wgpu::Buffer inputBuffer = utils::CreateBufferFromData(device, data.data(), data.size() * sizeof(uint32_t), copyDstUsage,  "InputBuffer");
-    
-    SegmentedSort sorter;
-    sorter.Init(device, inputBuffer, inputSize, segmentBuffer, segmentSize);
+    Test(device);
 }

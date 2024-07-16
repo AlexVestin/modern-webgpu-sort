@@ -24,8 +24,6 @@ struct Param {
 class SegmentedSort {
 public:
     void Dispose();
-    void CompileShaders(const wgpu::Device& device);
-
     void Init(
       const wgpu::Device& device,
       const wgpu::Buffer& inputBuffer, 
@@ -95,7 +93,7 @@ private:
     wgpu::Buffer opCounterBuffer;
     wgpu::Buffer mergeListBuffer;
 
-    wgpu::ComputePipeline blockPipeline;
+    wgpu::ComputePipeline blockPipeline[2];
     wgpu::ComputePipeline partitionPipeline;
     wgpu::ComputePipeline mergePipeline;
     wgpu::ComputePipeline binarySearchPipeline;

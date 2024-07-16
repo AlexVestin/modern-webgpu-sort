@@ -41,11 +41,11 @@ namespace ComputeUtil  {
         std::cout << std::endl;
     }
 
-    std::vector<Pair> fill_random_pairs(int a, int b, size_t count) {
+    std::vector<int2> fill_random_pairs(int a, int b, size_t count) {
         std::uniform_int_distribution<int> d(a, b);
-        std::vector<Pair> data(count);
+        std::vector<int2> data(count);
 
-        for (Pair& i : data) {
+        for (int2& i : data) {
             i.x = d(get_mt19937());
             i.y = d(get_mt19937());
         }

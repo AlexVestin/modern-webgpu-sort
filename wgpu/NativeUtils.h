@@ -10,10 +10,6 @@
 #include <unistd.h>
 #endif
 
-struct uint2 {
-    uint32_t x;
-    uint32_t y;
-};
 
 void DumpAllInfo();
 

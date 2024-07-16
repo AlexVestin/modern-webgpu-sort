@@ -10,7 +10,7 @@
 
 #include <thread>
 
-struct Pair {
+struct int2 {
   int32_t x, y;
 };
 
@@ -96,7 +96,7 @@ template <typename T>
     uint32_t divisor = 16
   );
 
-  std::vector<Pair> fill_random_pairs(
+  std::vector<int2> fill_random_pairs(
     int a, 
     int b, 
     size_t count

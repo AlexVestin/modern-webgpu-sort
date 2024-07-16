@@ -111,8 +111,36 @@ void SegmentedSort::InitBlock(
   const wgpu::Buffer& segmentsBuffer
 ) {
 
-  auto bgl = utils::MakeBindGroupLayout(
-    device, "BlockLayout", {
+  {
+    auto bgl0 = utils::MakeBindGroupLayout(
+    device, "BlockLayout0", {
+        { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
+        { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform }, 
+        { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
+        { 3, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
+        { 4, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
+  });
+
+  blockPipeline[0] = ComputeUtil::CreatePipeline(device, bgl0,
+    #include "segsort_tuple/seg_block_0.wgsl"
+    , "Sort::blockPipeline0"
+  );
+
+
+  blockBindGroups[0] = utils::MakeBindGroup(
+    device, bgl0,
+        {
+          { 0, inputBuffer },
+          { 1, paramBuffer, 0, sizeof(Param) },
+          { 2, segmentsBuffer },
+          { 3, partitionBuffer },
+          { 4, compressedRangesBuffer },
+    });
+  }
+
+  {
+    auto bgl = utils::MakeBindGroupLayout(
+    device, "BlockLayout1", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform }, 
@@ -121,21 +149,11 @@ void SegmentedSort::InitBlock(
         { 5, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
   });
 
-  blockPipeline = ComputeUtil::CreatePipeline(device, bgl,
+  blockPipeline[1] = ComputeUtil::CreatePipeline(device, bgl,
     #include "segsort_tuple/seg_block.wgsl"
-    , "Sort::blockPipeline"
+    , "Sort::blockPipeline1"
   );
 
-  blockBindGroups[0] = utils::MakeBindGroup(
-    device, bgl,
-        {
-          { 0, inputBuffer },
-          { 1, inputBuffer },
-          { 2, paramBuffer, 0, sizeof(Param) },
-          { 3, segmentsBuffer },
-          { 4, partitionBuffer },
-          { 5, compressedRangesBuffer },
-    });
   blockBindGroups[1] = utils::MakeBindGroup(
     device, bgl,
         {
@@ -146,6 +164,7 @@ void SegmentedSort::InitBlock(
           { 4, partitionBuffer },
           { 5, compressedRangesBuffer },
     });
+  }
 } 
 
 void SegmentedSort::InitBinarySearch(const wgpu::Device& device, const wgpu::Buffer& segmentsBuffer) {
@@ -376,7 +395,7 @@ void SegmentedSort::Sort(
   computePass.SetBindGroup(0, binarySearchBindGroup);
   computePass.DispatchWorkgroups(numBinarySearchDispatch);
 
-  computePass.SetPipeline(blockPipeline);
+  computePass.SetPipeline(blockPipeline[blockBindgroupIndex]);
   computePass.SetBindGroup(0, blockBindGroups[blockBindgroupIndex]);
   computePass.DispatchWorkgroups(numCtas);
   
