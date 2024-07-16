@@ -4,10 +4,8 @@
 #include <chrono>
 using namespace std::chrono;
 
-#include "src/wgpu/webgpu.h"
-#include "src/wgpu/WGPUHelpers.h"
-#include "src/util/ImageUtil.h"
-
+#include <webgpu/webgpu_cpp.h>
+#include "wgpu/WGPUHelpers.h"
 
 const int COPY_STATUS_OFFSET = 8192;
 
@@ -42,7 +40,6 @@ public:
         const wgpu::Device& device, 
         uint32_t count, 
         uint32_t segmentCount);
-
 
     void Sort(
         const wgpu::Device& device, 

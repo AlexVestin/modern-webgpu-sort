@@ -1,18 +1,77 @@
 #pragma once
 
-#include "src/wgpu/WGPUHelpers.h"
-#include "src/util/ImageUtil.h"
+#include "wgpu/WGPUHelpers.h"
+// #include "src/util/ImageUtil.h"
 #include <random>
 #include <iostream>
 #include <vector>
 #include <algorithm>
 #include <string>
 
+#include <thread>
+
 struct Pair {
   int32_t x, y;
 };
 
 namespace ComputeUtil  {
+
+
+template <typename T>
+std::vector<T> ReadBackBuffer(const wgpu::Device& device, const wgpu::Buffer& fromBuffer, uint32_t byteSize) {
+    WGPUBufferMapAsyncStatus readStatus = WGPUBufferMapAsyncStatus_Unknown;
+    fromBuffer.MapAsync(
+        wgpu::MapMode::Read, 0, byteSize,
+        [](WGPUBufferMapAsyncStatus status, void* userdata) { *static_cast<bool*>(userdata) = status; }, &readStatus);
+
+    uint32_t iterations = 0;
+    while (readStatus == WGPUBufferMapAsyncStatus_Unknown) {
+#ifndef __EMSCRIPTEN__
+        device.Tick();
+        std::this_thread::sleep_for(std::chrono::microseconds{50});
+#endif
+        if (iterations++ > 100000) {
+            std::cout << " ------ Failed to retrieve buffer -------- " << std::endl;
+            break;
+        }
+    }
+
+    if (readStatus == WGPUBufferMapAsyncStatus_Success) {
+        const T* data = static_cast<const T*>(fromBuffer.GetConstMappedRange());
+        fromBuffer.Unmap();
+        return {&data[0], &data[byteSize / sizeof(T)]};
+    }
+
+    std::cerr << "Failed to read back buffer, with status:" << static_cast<int>(readStatus) << std::endl;
+    return {T()};
+}
+
+template <typename T>
+  std::vector<T> CopyReadBackBuffer(const wgpu::Device& device, const wgpu::Buffer& fromBuffer, uint32_t byteSize) {
+    wgpu::BufferDescriptor desc;
+    desc.size = byteSize;
+    desc.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead;
+    desc.mappedAtCreation = false;
+    desc.label = "ReadbackBuffer";
+
+    wgpu::Buffer copyBuffer = device.CreateBuffer(&desc);
+
+    wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+    encoder.CopyBufferToBuffer(fromBuffer, 0, copyBuffer, 0, byteSize);
+    wgpu::CommandBuffer commandBuffer = encoder.Finish();
+
+    commandBuffer.SetLabel("ReadBackCommandBuffer");
+    auto queue = device.GetQueue();
+    queue.Submit(1, &commandBuffer);
+
+    utils::BusyWaitDevice(device);
+
+    std::vector<T> vv = std::move(ReadBackBuffer<T>(device, copyBuffer, byteSize));
+    copyBuffer.Destroy();
+
+    return vv;
+  }
+
   wgpu::ComputePipeline CreatePipeline(
     const wgpu::Device& device, 
     const wgpu::BindGroupLayout& bgl, 

@@ -3,10 +3,9 @@
 #include <chrono>
 using namespace std::chrono;
 
-#include "src/wgpu/webgpu.h"
-#include "src/wgpu/NativeUtils.h"
-#include "src/wgpu/WGPUHelpers.h"
-#include "src/util/ImageUtil.h"
+#include <webgpu/webgpu_cpp.h>
+#include "wgpu/NativeUtils.h"
+#include "wgpu/WGPUHelpers.h"
 #include "ComputeUtil.h"
 
 struct Param {

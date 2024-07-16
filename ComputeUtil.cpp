@@ -1,8 +1,7 @@
 #include "ComputeUtil.h"
 
-#include "src/util/FileUtil.h"
-#include "src/util/ShaderBuilder.h"
-#include "src/2d/renderer/HotReloadShader.h"
+// #include "src/util/FileUtil.h"
+// #include "src/2d/renderer/HotReloadShader.h"
 #include <thread>
 
 namespace ComputeUtil  {
@@ -11,50 +10,11 @@ namespace ComputeUtil  {
         *static_cast<bool*>(userdata) = true; 
     }
 
-  void CreatePipelineFromFile(
-    const wgpu::Device& device, 
-    const wgpu::BindGroupLayout& bgl, 
-    const std::string& filename,
-    wgpu::ComputePipeline* pl
-  ) {
-    HotReloader::SetDevice(device);
-    std::string shader = ShaderBuilder::Build(vis::file_util::LoadShaderFile(filename));
-    *pl = CreatePipeline(device, bgl, shader, filename.c_str());
-
-    #ifdef PLATFORM_DESKTOP
-    HotReloader::Watch(filename, [pl, filename](const std::string& src, const wgpu::Device& device) -> void {        
-        device.PushErrorScope(wgpu::ErrorFilter::Validation);
-        auto bgl = pl->GetBindGroupLayout(0);
-        wgpu::ComputePipeline pipeline = CreatePipeline(device, bgl, ShaderBuilder::Build(src), filename.c_str()); 
-        
-        WGPUErrorType error = WGPUErrorType_Unknown;
-        device.PopErrorScope([](WGPUErrorType type, char const * message, void * userdata) -> void {
-            *static_cast<WGPUErrorType*>(userdata) = type;
-            if (type != WGPUErrorType_NoError) {
-                std::cerr << "HotReloadError: " << message << std::endl; 
-            }
-        }, &error);
-
-        while (error == WGPUErrorType_Unknown) {
-            device.Tick();
-            std::this_thread::sleep_for(std::chrono::microseconds{ 100 });
-        }
-
-        if (error == WGPUErrorType_NoError) {
-            *pl = pipeline;
-        } else {
-            std::cerr << "Failed to reload pipeline: " << static_cast<int>(error) << std::endl;
-        }
-    });
-    #endif // PLATFORM_DESKTOP
-  }
-
   wgpu::ComputePipeline CreatePipeline(
       const wgpu::Device& device, 
       const wgpu::BindGroupLayout& bgl, 
       const std::string& shader,
-      const char* label
-      ) {
+      const char* label) {
     wgpu::ShaderModule shaderModule = utils::CreateShaderModule(device, shader.c_str(), label);
     wgpu::PipelineLayout pl = utils::MakeBasicPipelineLayout(device, &bgl);
     wgpu::ComputePipelineDescriptor csDesc;
@@ -100,7 +60,7 @@ namespace ComputeUtil  {
         for(int& i : data)
             i = d(get_mt19937());
         
-        if(sorted) {
+        if (sorted) {
             std::sort(data.begin(), data.end());
         }
         return data;
@@ -133,7 +93,7 @@ namespace ComputeUtil  {
 
     void BusyWaitDevice(const wgpu::Device& device) {
         bool done = false;
-        device.GetQueue().OnSubmittedWorkDone(0, [](WGPUQueueWorkDoneStatus status, void * userdata) -> void {
+        device.GetQueue().OnSubmittedWorkDone([](WGPUQueueWorkDoneStatus status, void * userdata) -> void {
             *static_cast<bool*>(userdata) = true;
         }, &done);
 

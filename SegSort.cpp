@@ -8,7 +8,7 @@ using namespace std::chrono;
 
 void SegmentedSort::InitPartition(const wgpu::Device& device, const wgpu::Buffer& inputBuffer) {
   auto bgl = utils::MakeBindGroupLayout(
-    device, {
+    device, "PartitionLayout", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage }, 
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform }, 
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage }, 
@@ -53,7 +53,7 @@ void SegmentedSort::InitPartition(const wgpu::Device& device, const wgpu::Buffer
 
 void SegmentedSort::InitClear(const wgpu::Device& device) {
   auto bgl = utils::MakeBindGroupLayout(
-    device, {
+    device, "ClearLayout", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform },
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage }, 
@@ -75,7 +75,7 @@ void SegmentedSort::InitClear(const wgpu::Device& device) {
 
 void SegmentedSort::InitCopy(const wgpu::Device& device, const wgpu::Buffer& inputBuffer) {
   auto bgl = utils::MakeBindGroupLayout(
-    device, {
+    device, "CopyLayout", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage }, 
@@ -112,7 +112,7 @@ void SegmentedSort::InitBlock(
 ) {
 
   auto bgl = utils::MakeBindGroupLayout(
-    device, {
+    device, "BlockLayout", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform }, 
@@ -150,7 +150,7 @@ void SegmentedSort::InitBlock(
 
 void SegmentedSort::InitBinarySearch(const wgpu::Device& device, const wgpu::Buffer& segmentsBuffer) {
   auto bgl = utils::MakeBindGroupLayout(
-    device, {
+    device, "BinarySearchLayout", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform }, 
@@ -172,7 +172,7 @@ void SegmentedSort::InitBinarySearch(const wgpu::Device& device, const wgpu::Buf
 
 void SegmentedSort::InitMerge(const wgpu::Device& device, const wgpu::Buffer& inputBuffer) {
   auto bgl = utils::MakeBindGroupLayout(
-    device, {
+    device, "MergeLayout", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::ReadOnlyStorage },
         { 1, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
         { 2, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Uniform }, 
@@ -211,23 +211,6 @@ void SegmentedSort::InitMerge(const wgpu::Device& device, const wgpu::Buffer& in
 } 
 
 void SegmentedSort::Dispose() {
-  blockPipeline.Release();
-  partitionPipeline.Release();
-  mergePipeline.Release();
-  binarySearchPipeline.Release();
-  copyPipeline.Release();
-  clearPipeline.Release();
-
-  blockBindGroups[0].Release();
-  blockBindGroups[1].Release();
-  partitionBindGroups[0].Release();
-  partitionBindGroups[1].Release();
-  mergeBindGroups[0].Release();
-  mergeBindGroups[1].Release();
-  copyBindGroups[0].Release();
-  copyBindGroups[1].Release();
-  clearBindGroup.Release();
-
   inputBufferCopy.Destroy();
   partitionBuffer.Destroy();
   paramBuffer.Destroy();
@@ -387,15 +370,15 @@ void SegmentedSort::Sort(
 
   computePass.SetPipeline(clearPipeline);
   computePass.SetBindGroup(0, clearBindGroup);
-  computePass.Dispatch(ComputeUtil::div_up(maxNumPasses * 24, nv));
+  computePass.DispatchWorkgroups(ComputeUtil::div_up(maxNumPasses * 24, nv));
  
   computePass.SetPipeline(binarySearchPipeline);
   computePass.SetBindGroup(0, binarySearchBindGroup);
-  computePass.Dispatch(numBinarySearchDispatch);
+  computePass.DispatchWorkgroups(numBinarySearchDispatch);
 
   computePass.SetPipeline(blockPipeline);
   computePass.SetBindGroup(0, blockBindGroups[blockBindgroupIndex]);
-  computePass.Dispatch(numCtas);
+  computePass.DispatchWorkgroups(numCtas);
   
   uint32_t mergeBindgroupIndex = 0;
   if (1 & numPasses) {
@@ -405,15 +388,15 @@ void SegmentedSort::Sort(
   for (int pass = 0; pass < numPasses; pass++) {
     computePass.SetPipeline(partitionPipeline);
     computePass.SetBindGroup(0, partitionBindGroups[mergeBindgroupIndex % 2]);
-    computePass.Dispatch(num_partition_ctas);
+    computePass.DispatchWorkgroups(num_partition_ctas);
     
     computePass.SetPipeline(mergePipeline);
     computePass.SetBindGroup(0, mergeBindGroups[mergeBindgroupIndex % 2]);
-    computePass.DispatchIndirect(opCounterBuffer, (pass * 6) * sizeof(int));
+    computePass.DispatchWorkgroupsIndirect(opCounterBuffer, (pass * 6) * sizeof(int));
 
     computePass.SetPipeline(copyPipeline);
     computePass.SetBindGroup(0, copyBindGroups[mergeBindgroupIndex % 2]);
-    computePass.DispatchIndirect(opCounterBuffer, ((pass*2+1) * 3) * sizeof(int));
+    computePass.DispatchWorkgroupsIndirect(opCounterBuffer, ((pass*2+1) * 3) * sizeof(int));
     mergeBindgroupIndex++;
   }
 
