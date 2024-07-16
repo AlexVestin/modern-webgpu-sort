@@ -1,30 +1,30 @@
 R"(
   struct Parameters {
-    count: u32;
-    nt: u32;
-    vt: u32;
-    num_wg: u32;
-    num_partitions: u32;
-    num_segments: u32;
-    num_ranges: u32;
-    num_partition_ctas: u32;
-    max_num_passes: u32;
+    count: u32,
+    nt: u32,
+    vt: u32,
+    num_wg: u32,
+    num_partitions: u32,
+    num_segments: u32,
+    num_ranges: u32,
+    num_partition_ctas: u32,
+    max_num_passes: u32
   };
 
-  let words_per_thread = 4u;
+  const words_per_thread = 4u;
 
-  struct Data2 { data: array<vec2<u32>>; };
-  struct Data { data: array<u32>; };
+  struct Data2 { data: array<vec2<u32>> };
+  struct Data { data: array<u32> };
 
   @binding(0) @group(0) var<storage, read> keys_src: Data2;
-  @binding(1) @group(0) var<storage, write> keys_dst: Data2;
+  @binding(1) @group(0) var<storage, read_write> keys_dst: Data2;
   @binding(2) @group(0) var<uniform> params: Parameters;
   @binding(3) @group(0) var<storage, read> segments: Data;
   @binding(4) @group(0) var<storage, read> partitions: Data;
-  @binding(5) @group(0) var<storage, write> compressedRanges: Data;
+  @binding(5) @group(0) var<storage, read_write> compressedRanges: Data;
 
   // nt * vt (128 * 15) + 1
-  var<workgroup> shared: array<vec2<u32>, 1921>;
+  var<workgroup> shared_: array<vec2<u32>, 1921>;
   var<workgroup> ranges: array<i32, 128>;
   var<private> local_keys: array<vec2<u32>, 15>;
 
@@ -107,11 +107,11 @@ R"(
   }
 
   fn reg_to_shared_strided(tid: u32) {
-    for(var i = 0u; i < 15u; i = i + 1u) { shared[128u * i + tid] = local_keys[i]; }
+    for(var i = 0u; i < 15u; i = i + 1u) { shared_[128u * i + tid] = local_keys[i]; }
   }
 
   fn shared_to_reg_thread(tid: u32) {
-    for (var i = 0u; i < 15u; i = i +1u) { local_keys[i] = shared[15u * tid + i]; }
+    for (var i = 0u; i < 15u; i = i +1u) { local_keys[i] = shared_[15u * tid + i]; }
   }
 
   fn mem_to_reg_thread(global_offset: u32, tid: u32, count: u32) {
@@ -125,14 +125,14 @@ R"(
 
   fn reg_to_shared_thread(tid: u32) {
     for(var i = 0u; i < 15u; i = i + 1u) {
-      shared[15u*tid+i] = local_keys[i];
+      shared_[15u*tid+i] = local_keys[i];
     }
     workgroupBarrier();
   }
 
   fn shared_to_reg_strided(tid: u32) {
     for(var i = 0u; i < 15u; i = i + 1u) {
-      local_keys[i] = shared[128u * i + tid];
+      local_keys[i] = shared_[128u * i + tid];
     }
     workgroupBarrier();
   }
@@ -225,7 +225,7 @@ R"(
       // Clear the flag bytes, then loop through the indices and poke in
       // flag bytes.
       for (var i = 0u; i < words_per_thread; i = i + 1u) {
-        shared[128u * i + tid].x = 0u;
+        shared_[128u * i + tid].x = 0u;
       }
       workgroupBarrier();
 
@@ -257,8 +257,9 @@ R"(
         }
         
         let flag_index = cur / 4u;
-        let val = 1u << (cur % 4u) * 8u; 
-        shared[flag_index].x = shared[flag_index].x | val;
+        // TODO: validate parenthesis
+        let val = 1u << ((cur % 4u) * 8u); 
+        shared_[flag_index].x = shared_[flag_index].x | val;
         has_own = true;
         mp_count = mp_count + 1u;
         prev_val = cur;
@@ -269,11 +270,11 @@ R"(
       // Combine all the head flags for this thread.
       let first = 15u * tid;
       let offset = first / 4u;
-      var prev = shared[offset].x;
+      var prev = shared_[offset].x;
       let mask = 0x3210u + 0x1111u * (3u & first);
 
       for(var i = 0u; i < words_per_thread; i = i + 1u) {
-        let next = shared[offset + 1u + i].x;
+        let next = shared_[offset + 1u + i].x;
         let x = prmt(prev, next, mask);
         prev = next;
 
@@ -292,13 +293,13 @@ R"(
     return head_flags;
   }
   
-  fn partition(range: vec4<i32>, mp0: i32, diag: i32) -> vec4<i32> {
+  fn partition_(range: vec4<i32>, mp0: i32, diag: i32) -> vec4<i32> {
     return vec4<i32>(range.x + mp0, range.y, range.z + diag - mp0, range.w);
   }
 
-  fn compute_mergesort_frame(partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
+  fn compute_mergesort_frame(partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
     let size = spacing * (coop / 2);
-    let start = ~(coop - 1) & partition;
+    let start = ~(coop - 1) & partition_;
     let a_begin = spacing * start;
     let b_begin = spacing * start + size;
     return vec4<i32>(
@@ -309,8 +310,8 @@ R"(
     );
   }
 
-  fn compute_mergesort_range(count: i32, partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
-    let frame = compute_mergesort_frame(partition, coop, spacing);
+  fn compute_mergesort_range(count: i32, partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
+    let frame = compute_mergesort_frame(partition_, coop, spacing);
     return vec4<i32>(
       frame.x,
       min(count, frame.y),
@@ -328,8 +329,8 @@ R"(
         break;
       }
       let mid = u32(begin + end) / 2u;
-      let a_key = shared[u32(a_keys) + mid];
-      let b_key = shared[u32(b_keys + diag) - 1u - mid];
+      let a_key = shared_[u32(a_keys) + mid];
+      let b_key = shared_[u32(b_keys + diag) - 1u - mid];
 
       if (!comp(b_key.x, a_key.x)) {
         begin = i32(mid + 1u);
@@ -351,22 +352,22 @@ R"(
     );
   }
 
-  fn segmented_merge_path(range: vec4<i32>, active: vec2<i32>, diag: i32) -> i32 {
+  fn segmented_merge_path(range: vec4<i32>, active_: vec2<i32>, diag: i32) -> i32 {
     // Consider a rectangle defined by range.
     // Now consider a sub-rectangle at the top-right corner defined by
     // active. We want to run the merge path only within this corner part.
 
     // If the cross-diagonal does not intersect our corner, return immediately.
-    if (range.x + diag <= active.x)  {
+    if (range.x + diag <= active_.x)  {
       return diag;
     }
 
-    if (range.x + diag >= active.y) {
+    if (range.x + diag >= active_.y) {
       return range.y - range.x;
     } 
 
     // Call merge_path on the corner domain.
-    var cactive = active;
+    var cactive = active_;
     cactive.x = max(cactive.x, range.x);
     cactive.y = min(cactive.y, range.w);
 
@@ -378,18 +379,18 @@ R"(
     return i32(p) + active_offset;
   }
 
-  fn segmented_serial_merge(range: vec4<i32>, active: vec2<i32>) {
+  fn segmented_serial_merge(range: vec4<i32>, active_: vec2<i32>) {
     var crange = range;
-    crange.w = min(active.y, crange.w);
+    crange.w = min(active_.y, crange.w);
 
-    var a_key = shared[crange.x];
-    var b_key = shared[crange.z];
+    var a_key = shared_[crange.x];
+    var b_key = shared_[crange.z];
 
     for(var i = 0u; i < 15u; i = i + 1u) {
       var p: bool;
       if (crange.x >= crange.y) {
         p = false;
-      } else if (crange.z >= crange.w || crange.x < active.x) {
+      } else if (crange.z >= crange.w || crange.x < active_.x) {
         p = true;
       } else {
         p = !comp(b_key.x, a_key.x);
@@ -397,7 +398,7 @@ R"(
 
       var index: u32 = u32(crange.x);
       if(!p) { index = u32(crange.z); }
-      let c_key = shared[index + 1u];
+      let c_key = shared_[index + 1u];
      
       if (p) {
         local_keys[i] = a_key;
@@ -413,10 +414,10 @@ R"(
     workgroupBarrier();
   }
 
-  fn merge_pass(tid: u32, count: u32, pass: u32, active: vec2<i32>) -> vec2<i32> {
-    var cactive = active;
+  fn merge_pass(tid: u32, count: u32, pass_: u32, active_: vec2<i32>) -> vec2<i32> {
+    var cactive = active_;
 
-    let list = i32(tid >> pass);
+    let list = i32(tid >> pass_);
     // Fetch the active range for the list this thread's list is merging with.
     let sibling_range = ranges[1 ^ list];
     let sibling = vec2<i32>(i32(0x0000ffff & sibling_range), i32(sibling_range >> 16u));
@@ -442,13 +443,13 @@ R"(
 
     // Store the data from thread order into shared memory.
     reg_to_shared_thread(tid);
-    let coop = 2 << pass;
+    let coop = 2 << pass_;
     let range = compute_mergesort_range(i32(count), i32(tid), i32(coop), i32(15u));
     let diag = 15u * tid - u32(range.x);
     let mp = segmented_merge_path(range, inner, i32(diag));
 
     // Run a segmented serial merge.
-    let part = partition(range, i32(mp), i32(diag));
+    let part = partition_(range, i32(mp), i32(diag));
     segmented_serial_merge(part, inner);
     
     // Pack and store the outer range to shared memory.
@@ -464,28 +465,28 @@ R"(
     odd_even_sort(head_flags);
 
     // Record the first and last occurrences of head flags in this segment.
-    var active: vec2<i32>;
+    var active_: vec2<i32>;
     if (head_flags != 0u) {
-      active.x = i32(15u * tid) - 1 + i32(ffs(head_flags));
-      active.y = i32(15u * tid) + 31 - i32(clz(head_flags));
+      active_.x = i32(15u * tid) - 1 + i32(ffs(head_flags));
+      active_.y = i32(15u * tid) + 31 - i32(clz(head_flags));
     } else {
-      active.x = i32(15u * 128u);
-      active.y = -1;
+      active_.x = i32(15u * 128u);
+      active_.y = -1;
     }
 
-    ranges[tid] = i32( bfi(u32(active.y), u32(active.x), 16u, 16u) );
+    ranges[tid] = i32( bfi(u32(active_.y), u32(active_.x), 16u, 16u) );
     workgroupBarrier();
 
     let num_passes = s_log2(128u);
     // Merge threads starting with a pair until all values are merged.
-    for (var pass = 0u; pass < num_passes; pass = pass + 1u) {
-      active = merge_pass(tid, count, pass, active);
+    for (var pass_ = 0u; pass_ < num_passes; pass_++) {
+      active_ = merge_pass(tid, count, pass_, active_);
     }
 
-    return active;
+    return active_;
   }
 
-  @stage(compute) @workgroup_size(128, 1, 1)
+  @compute @workgroup_size(128, 1, 1)
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
@@ -501,13 +502,13 @@ R"(
     );
     let head_flags = load(p, nv, local_id.x, workgroup_id.x, params.count);
     mem_to_reg_thread(tile.x, local_id.x, tile_count);
-    let active = block_sort(local_id.x, tile_count, head_flags);
+    let active_ = block_sort(local_id.x, tile_count, head_flags);
 
     reg_to_mem_thread(tile.x, local_id.x, tile_count);
 
     // segmented partitioning kernels.
     if (local_id.x == 0u) {
-     compressedRanges.data[workgroup_id.x] = bfi(u32(active.y), u32(active.x), 16u, 16u);
+     compressedRanges.data[workgroup_id.x] = bfi(u32(active_.y), u32(active_.x), 16u, 16u);
     }
   }
 )"

@@ -1,23 +1,23 @@
 R"(
   struct Parameters {
-    count: u32;
-    nt: u32;
-    vt: u32;
-    num_wg: u32;
-    num_partitions: u32;
+    count: u32,
+    nt: u32,
+    vt: u32,
+    num_wg: u32,
+    num_partitions: u32
   };
 
-  struct Data { data: array<u32>; };
-  struct Counter { data: atomic<u32>; };
+  struct Data { data: array<u32> };
+  struct Counter { data: atomic<u32> };
 
   @binding(0) @group(0) var<storage, read_write> keys: Data;
   @binding(1) @group(0) var<uniform> params: Parameters;
-  @binding(2) @group(0) var<storage, write> partitions: Data;
+  @binding(2) @group(0) var<storage, read_write> partitions: Data;
   @binding(3) @group(0) var<storage, read_write> counter: Counter;
 
-  fn compute_mergesort_frame(partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
+  fn compute_mergesort_frame(partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
     let size = spacing * (coop / 2);
-    let start = ~(coop - 1) & partition;
+    let start = ~(coop - 1) & partition_;
     let a_begin = spacing * start;
     let b_begin = spacing * start + size;
     return vec4<i32>(
@@ -28,12 +28,12 @@ R"(
     );
   }
 
-  fn partition(range: vec4<i32>, mp0: i32, diag: i32) -> vec4<i32> {
+  fn partition_(range: vec4<i32>, mp0: i32, diag: i32) -> vec4<i32> {
     return vec4<i32>(range.x + mp0, range.y, range.z + diag - mp0, range.w);
   }
 
-  fn compute_mergesort_range(count: i32, partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
-    let frame = compute_mergesort_frame(partition, coop, spacing);
+  fn compute_mergesort_range(count: i32, partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
+    let frame = compute_mergesort_frame(partition_, coop, spacing);
     return vec4<i32>(
       frame.x,
       min(count, frame.y),
@@ -64,7 +64,7 @@ R"(
     return u32(begin);
   }
 
-  @stage(compute) @workgroup_size(128, 1, 1)
+  @compute @workgroup_size(128, 1, 1)
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
@@ -73,8 +73,8 @@ R"(
 
     let nv = 128u * 15u;    
 
-    let pass = atomicLoad(&counter.data) / params.num_wg;
-    let coop = 2 << pass;
+    let pass_ = atomicLoad(&counter.data) / params.num_wg;
+    let coop = 2 << pass_;
 
     if (local_id.x == 0u) {
       atomicAdd(&counter.data, 1u);

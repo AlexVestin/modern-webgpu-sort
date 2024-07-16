@@ -1,20 +1,20 @@
 R"(
   struct Parameters {
-    count: u32;
-    nt: u32;
-    vt: u32;
-    num_wg: u32;
-    num_partitions: u32;
-    num_segments: u32;
-    num_ranges: u32;
-    num_partition_ctas: u32;
-    max_num_passes: u32;
+    count: u32,
+    nt: u32,
+    vt: u32,
+    num_wg: u32,
+    num_partitions: u32,
+    num_segments: u32,
+    num_ranges: u32,
+    num_partition_ctas: u32,
+    max_num_passes: u32
   };
 
-  struct Data { data: array<u32>; };
+  struct Data { data: array<u32> };
 
   @binding(0) @group(0) var<storage, read> segments: Data;
-  @binding(1) @group(0) var<storage, write> partitions: Data;
+  @binding(1) @group(0) var<storage, read_write> partitions: Data;
   @binding(2) @group(0) var<uniform> params: Parameters;
 
   fn binary_search(count: u32, key: u32) -> u32 {
@@ -39,7 +39,7 @@ R"(
   }
 
  
-  @stage(compute) @workgroup_size(128, 1, 1)
+  @compute @workgroup_size(128, 1, 1)
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,

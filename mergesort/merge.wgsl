@@ -1,35 +1,35 @@
 R"(
   struct Parameters {
-    count: u32;
-    nt: u32;
-    vt: u32;
-    num_wg: u32;
-    num_partition: u32;
+    count: u32,
+    nt: u32,
+    vt: u32,
+    num_wg: u32,
+    num_partition: u32,
   };
 
-  struct Data { data: array<u32>; };
-  struct Counter { data: u32; };
+  struct Data { data: array<u32> };
+  struct Counter { data: u32 };
 
   @binding(0) @group(0) var<storage, read> keys: Data;
-  @binding(1) @group(0) var<storage, write> keys_out: Data;
+  @binding(1) @group(0) var<storage, read_write> keys_out: Data;
   @binding(2) @group(0) var<uniform> params: Parameters;
-  @binding(3) @group(0) var<storage, write> partitions: Data;
+  @binding(3) @group(0) var<storage, read_write> partitions: Data;
   @binding(4) @group(0) var<storage, read> counter: Counter;
 
   // nt * vt (128 * 15)
-  var<workgroup> shared: array<u32, 2048>;
+  var<workgroup> shared_: array<u32, 2048>;
   var<private> local_keys: array<u32, 16>;
 
   fn reg_to_shared_thread(tid: u32) {
   for(var i = 0u; i < 15u; i = i + 1u) {
-      shared[15u*tid+i] = local_keys[i];
+      shared_[15u*tid+i] = local_keys[i];
     }
     workgroupBarrier();
   }
 
   fn shared_to_reg_strided(tid: u32) {
     for(var i = 0u; i < 15u; i = i + 1u) {
-      local_keys[i] = shared[128u * i + tid];
+      local_keys[i] = shared_[128u * i + tid];
     }
     workgroupBarrier();
   }
@@ -57,9 +57,9 @@ R"(
     reg_to_mem_strided(global_offset, tid, count);
   }
 
-  fn compute_mergesort_frame(partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
+  fn compute_mergesort_frame(partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
     let size = spacing * (coop / 2);
-    let start = ~(coop - 1) & partition;
+    let start = ~(coop - 1) & partition_;
     let a_begin = spacing * start;
     let b_begin = spacing * start + size;
     return vec4<i32>(
@@ -70,12 +70,12 @@ R"(
     );
   }
 
-  fn partition(range: vec4<i32>, mp0: i32, diag: i32) -> vec4<i32> {
+  fn partition_(range: vec4<i32>, mp0: i32, diag: i32) -> vec4<i32> {
     return vec4<i32>(range.x + mp0, range.y, range.z + diag - mp0, range.w);
   }
 
-  fn compute_mergesort_range(count: i32, partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
-    let frame = compute_mergesort_frame(partition, coop, spacing);
+  fn compute_mergesort_range(count: i32, partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
+    let frame = compute_mergesort_frame(partition_, coop, spacing);
     return vec4<i32>(
       frame.x,
       min(count, frame.y),
@@ -84,11 +84,11 @@ R"(
     );
   }
 
-  fn compute_mergesort_range_2(count: i32, partition: i32, coop: i32, spacing: i32, mp0: i32, mp1: i32) -> vec4<i32> {
-    var range = compute_mergesort_range(count, partition, coop, spacing);
-    let diag = spacing * partition - range.x;
+  fn compute_mergesort_range_2(count: i32, partition_: i32, coop: i32, spacing: i32, mp0: i32, mp1: i32) -> vec4<i32> {
+    var range = compute_mergesort_range(count, partition_, coop, spacing);
+    let diag = spacing * partition_ - range.x;
 
-    if(coop - 1 != ((coop - 1) & partition)) {
+    if(coop - 1 != ((coop - 1) & partition_)) {
       range.y = range.x + mp1;
       range.w = min(count, range.z + diag + spacing - mp1);
     }
@@ -107,8 +107,8 @@ R"(
         break;
       }
       let mid = (begin + end) / 2u;
-      let a_key = shared[a_keys + mid];
-      let b_key = shared[b_keys + diag - 1u - mid];
+      let a_key = shared_[a_keys + mid];
+      let b_key = shared_[b_keys + diag - 1u - mid];
 
       if (a_key <= b_key) {
         begin = mid + 1u;
@@ -141,8 +141,8 @@ R"(
 
   fn serial_merge(range_: vec4<i32>) {
     var crange = range_;
-    var a_key = shared[crange.x];
-    var b_key = shared[crange.z];
+    var a_key = shared_[crange.x];
+    var b_key = shared_[crange.z];
     
     for(var i = 0u; i < 15u; i = i + 1u) {
       let p = merge_predicate(crange, a_key, b_key);
@@ -157,7 +157,7 @@ R"(
         local_keys[i] = b_key;
       }
 
-      let c_key = shared[u32(index) + 1u];
+      let c_key = shared_[u32(index) + 1u];
       if (p) {
         a_key = c_key;
         crange.x = index + 1; 
@@ -181,7 +181,7 @@ R"(
 
   fn reg_to_shared_strided(tid: u32) {
     for(var i = 0u; i < 15u; i = i + 1u) {
-      shared[128u * i + tid] = local_keys[i];
+      shared_[128u * i + tid] = local_keys[i];
     }
     workgroupBarrier();
   }
@@ -234,12 +234,12 @@ R"(
     let diag = 15u * tid;
     let mp = merge_path(range_local, diag);
 
-    let part = partition(range_local, i32(mp), i32(diag));
+    let part = partition_(range_local, i32(mp), i32(diag));
 
     serial_merge(part);
   }
  
-  @stage(compute) @workgroup_size(128, 1, 1)
+  @compute @workgroup_size(128, 1, 1)
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
@@ -247,8 +247,8 @@ R"(
   ) {
     // SETUP
     let nv = 128u * 15u;   
-    let pass = (counter.data / params.num_wg) - 1u;
-    let coop = 2 << pass;
+    let pass_ = (counter.data / params.num_wg) - 1u;
+    let coop = 2 << pass_;
     // let coop = params.coop;
 
     let tile = get_tile(workgroup_id.x, nv, params.count);

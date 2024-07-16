@@ -1,24 +1,24 @@
 R"(
   struct Parameters {
-    count: u32;
-    nt: u32;
-    vt: u32;
-    nt2: u32;
-    num_partitions: u32;
-    num_segments: u32;
-    num_ranges: u32;
-    num_partition_ctas: u32;
-    max_num_passes: u32;
+    count: u32,
+    nt: u32,
+    vt: u32,
+    nt2: u32,
+    num_partitions: u32,
+    num_segments: u32,
+    num_ranges: u32,
+    num_partition_ctas: u32,
+    max_num_passes: u32,
   };
 
-  let COPY_STATUS_OFFSET = 8192u;
+  const COPY_STATUS_OFFSET = 8192u;
 
-  struct Data2 { data: array<vec2<u32>>; };
-  struct Data { data: array<u32>; };
-  struct AtomicData { data: array<atomic<i32>>; };
-  struct AtomicCounter { data: atomic<u32>; };
-  struct Ranges { data: array<vec2<i32>>; };
-  struct MergeRanges { data: array<vec4<i32>>; };
+  struct Data2 { data: array<vec2<u32>> };
+  struct Data { data: array<u32> };
+  struct AtomicData { data: array<atomic<i32>> };
+  struct AtomicCounter { data: atomic<u32> };
+  struct Ranges { data: array<vec2<i32>> };
+  struct MergeRanges { data: array<vec4<i32>> };
 
   @binding(0) @group(0) var<storage, read> keys: Data2;
   @binding(1) @group(0) var<uniform> params: Parameters;
@@ -26,11 +26,11 @@ R"(
   @binding(3) @group(0) var<storage, read> compressed_ranges: Data;
   @binding(4) @group(0) var<storage, read_write> pass_counter: AtomicCounter;
   @binding(5) @group(0) var<storage, read_write> op_counters: AtomicData;
-  @binding(6) @group(0) var<storage, write> merge_list_data: MergeRanges;
+  @binding(6) @group(0) var<storage, read_write> merge_list_data: MergeRanges;
   @binding(7) @group(0) var<storage, read_write> copy_list_data: Data;
   
   // 2*nt needed by scan
-  var<workgroup> shared: array<i32, 128>;
+  var<workgroup> shared_: array<i32, 128>;
 
   fn unpack_x(val: u32) -> i32 {
     return (i32(val) & 0xffff) - (0xffff + 1) * ((i32(val) & 0xffff) >> 15u); 
@@ -54,9 +54,9 @@ R"(
     return false;
   }
   
-  fn compute_mergesort_frame(partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
+  fn compute_mergesort_frame(partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
     let size = spacing * (coop / 2);
-    let start = ~(coop - 1) & partition;
+    let start = ~(coop - 1) & partition_;
     let a_begin = spacing * start;
     let b_begin = spacing * start + size;
     return vec4<i32>(
@@ -67,8 +67,8 @@ R"(
     );
   }
 
-  fn compute_mergesort_range(count: i32, partition: i32, coop: i32, spacing: i32) -> vec4<i32> {
-    let frame = compute_mergesort_frame(partition, coop, spacing);
+  fn compute_mergesort_range(count: i32, partition_: i32, coop: i32, spacing: i32) -> vec4<i32> {
+    let frame = compute_mergesort_frame(partition_, coop, spacing);
     return vec4<i32>(
       frame.x,
       min(count, frame.y),
@@ -77,11 +77,11 @@ R"(
     );
   }
 
-  fn compute_mergesort_range_2(count: i32, partition: i32, coop: i32, spacing: i32, mp0: i32, mp1: i32) -> vec4<i32> {
-    var range = compute_mergesort_range(count, partition, coop, spacing);
-    let diag = spacing * partition - range.x;
+  fn compute_mergesort_range_2(count: i32, partition_: i32, coop: i32, spacing: i32, mp0: i32, mp1: i32) -> vec4<i32> {
+    var range = compute_mergesort_range(count, partition_, coop, spacing);
+    let diag = spacing * partition_ - range.x;
 
-    if(coop - 1 != ((coop - 1) & partition)) {
+    if(coop - 1 != ((coop - 1) & partition_)) {
       range.y = range.x + mp1;
       range.w = min(count, range.z + diag + spacing - mp1);
     }
@@ -124,22 +124,22 @@ R"(
     );
   }
   
-  fn segmented_merge_path(range: vec4<i32>, active: vec2<i32>, diag: i32) -> i32 {
+  fn segmented_merge_path(range: vec4<i32>, active_: vec2<i32>, diag: i32) -> i32 {
     // Consider a rectangle defined by range.
     // Now consider a sub-rectangle at the top-right corner defined by
     // active. We want to run the merge path only within this corner part.
 
     // If the cross-diagonal does not intersect our corner, return immediately.
-    if (range.x + diag <= active.x)  {
+    if (range.x + diag <= active_.x)  {
       return diag;
     }
 
-    if (range.x + diag >= active.y) {
+    if (range.x + diag >= active_.y) {
       return range.y - range.x;
     } 
 
     // Call merge_path on the corner domain.
-    var cactive = active;
+    var cactive = active_;
     cactive.x = max(cactive.x, range.x);
     cactive.y = min(cactive.y, range.w);
 
@@ -167,27 +167,27 @@ R"(
     var cx = i32(x);
     var first = 0u;
 
-    shared[first + tid] = cx;
+    shared_[first + tid] = cx;
     workgroupBarrier();
     // s_log2(64u)
     for(var i = 0u; i < 6u; i = i + 1u) {
       let offset = 1u << i;
       if (tid >= offset) {
-        cx = cx + shared[first + tid - offset];
+        cx = cx + shared_[first + tid - offset];
       }
         
       first = 64u - first;
-      shared[first + tid] = cx;
+      shared_[first + tid] = cx;
       workgroupBarrier();
     }
       
 
     let count = 64u;
     var result: vec2<i32>;
-    result.x = shared[first + count - 1u];
+    result.x = shared_[first + count - 1u];
     if (tid < count) {
       if (tid != 0u) {
-        result.y = shared[first + tid - 1u];
+        result.y = shared_[first + tid - 1u];
       } else {
         result.y = 0;
       }
@@ -199,11 +199,11 @@ R"(
     return result;
   }
 
-  fn get_range(pass: u32) -> vec3<u32> {
+  fn get_range(pass_: u32) -> vec3<u32> {
     var range = params.num_ranges;
     var offset = 0u;
     var previous_offset = 0u;
-    for (var i = 0u; i < pass; i = i + 1u) {
+    for (var i = 0u; i < pass_; i = i + 1u) {
       previous_offset = offset;
       range = (range + 1u) / 2u;
       offset = offset + range;
@@ -213,7 +213,7 @@ R"(
   }
 
 
-  @stage(compute) @workgroup_size(64, 1, 1)
+  @compute @workgroup_size(64, 1, 1)
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
@@ -221,8 +221,8 @@ R"(
 
   ) {
 
-    let pass = atomicLoad(&pass_counter.data) / params.num_partition_ctas;
-    let coop = 2 << pass;
+    let pass_ = atomicLoad(&pass_counter.data) / params.num_partition_ctas;
+    let coop = 2 << pass_;
 
     if (local_id.x == 0u) {
       atomicAdd(&pass_counter.data, 1u);
@@ -233,19 +233,19 @@ R"(
     let cta = workgroup_id.x;
     let tid = local_id.x;
 
-    let partition = (64u - 1u) * cta + tid;
-    let first = nv * partition;
+    let partition_ = (64u - 1u) * cta + tid;
+    let first = nv * partition_;
     let count2 = min(nv, params.count - first);
 
     var mp0 = 0;
-    let active = (tid < 64u - 1u) && (partition < params.num_partitions - 1u);
-    let range_index = partition >> pass;
+    let active_ = (tid < 64u - 1u) && (partition_ < params.num_partitions - 1u);
+    let range_index = partition_ >> pass_;
 
-    if (partition < params.num_partitions) {
-      let range = compute_mergesort_range(i32(params.count), i32(partition), i32(coop), i32(nv));
-      let diag = min(i32(nv * partition) - range.x, (range.y-range.x)+(range.w-range.z));
+    if (partition_ < params.num_partitions) {
+      let range = compute_mergesort_range(i32(params.count), i32(partition_), i32(coop), i32(nv));
+      let diag = min(i32(nv * partition_) - range.x, (range.y-range.x)+(range.w-range.z));
 
-      let r = get_range(pass);
+      let r = get_range(pass_);
       let indices = vec2<u32>( 
         min(r.x - 1u, ~1u & range_index), 
         min(r.x - 1u, 1u | range_index) 
@@ -253,7 +253,7 @@ R"(
 
       var ranges: array<vec2<i32>, 2>;
 
-      if(pass > 0u) {
+      if(pass_ > 0u) {
         ranges[0] = source_ranges.data[r.z + indices.x];
         ranges[1] = source_ranges.data[r.z + indices.y];
       } else {
@@ -286,19 +286,19 @@ R"(
       mp0 = segmented_merge_path(range, inner, diag);
 
       // Store outer merge range.
-      if (active && 0 == diag) {
+      if (active_ && 0 == diag) {
         source_ranges.data[r.y + range_index / 2u] = outer;
       }
     }
 
-    shared[tid] = mp0;
+    shared_[tid] = mp0;
     workgroupBarrier();
 
-    let mp1 = shared[tid + 1u];
+    let mp1 = shared_[tid + 1u];
     workgroupBarrier();
 
     // Update the merge range to include partitioning.
-    var range = compute_mergesort_range_2(i32(params.count), i32(partition), i32(coop), i32(nv), i32(mp0), i32(mp1));
+    var range = compute_mergesort_range_2(i32(params.count), i32(partition_), i32(coop), i32(nv), i32(mp0), i32(mp1));
 
     // Merge if the source interval does not exactly cover the destination
     // interval. Otherwise copy or skip.
@@ -313,34 +313,34 @@ R"(
     var copy_op = false;
 
     // Create a segsort job.
-    if (active) {
+    if (active_) {
       let interval_count = u32(interval.y-interval.x);
       merge_op = (first != u32(interval.x)) || (interval_count != count2);
-      copy_op = !merge_op && (pass == 0u || copy_list_data.data[COPY_STATUS_OFFSET + partition] == 0u);
+      copy_op = !merge_op && (pass_ == 0u || copy_list_data.data[COPY_STATUS_OFFSET + partition_] == 0u);
 
       // Use the b_end component to store the index of the destination tile.
       // The actual b_end can be inferred from a_count and the length of 
       // the input array.
-      range.w = i32(partition);
+      range.w = i32(partition_);
     }
 
     let merge_scan = scan(tid, u32(merge_op));
     let copy_scan = scan(tid, u32(copy_op));
 
     if (tid == 0u) {
-      shared[0] = atomicAdd(&op_counters.data[pass*6u], i32(merge_scan.x));
-      shared[1] = atomicAdd(&op_counters.data[(pass*2u+1u) * 3u], i32(copy_scan.x));
+      shared_[0] = atomicAdd(&op_counters.data[pass_*6u], i32(merge_scan.x));
+      shared_[1] = atomicAdd(&op_counters.data[(pass_*2u+1u) * 3u], i32(copy_scan.x));
     }
     workgroupBarrier();
 
-    if (active) {
-      copy_list_data.data[COPY_STATUS_OFFSET + partition] = u32(!merge_op);
+    if (active_) {
+      copy_list_data.data[COPY_STATUS_OFFSET + partition_] = u32(!merge_op);
       if (merge_op) {
-        merge_list_data.data[u32(shared[0]) + u32(merge_scan.y)] = range;
+        merge_list_data.data[u32(shared_[0]) + u32(merge_scan.y)] = range;
       }
         
       if (copy_op) {
-        copy_list_data.data[u32(shared[1]) + u32(copy_scan.y)] = partition;
+        copy_list_data.data[u32(shared_[1]) + u32(copy_scan.y)] = partition_;
       }
     }
   }

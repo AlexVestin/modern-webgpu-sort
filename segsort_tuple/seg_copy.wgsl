@@ -1,23 +1,22 @@
 R"(
   
   struct Parameters {
-    count: u32;
-    nt: u32;
-    vt: u32;
-    num_wg: u32;
-    num_partitions: u32;
-    num_segments: u32;
-    num_ranges: u32;
-    num_partition_ctas: u32;
-    max_num_passes: u32;
-
+    count: u32,
+    nt: u32,
+    vt: u32,
+    num_wg: u32,
+    num_partitions: u32,
+    num_segments: u32,
+    num_ranges: u32,
+    num_partition_ctas: u32,
+    max_num_passes: u32,
   };
 
-  struct Data { data: array<u32>; };
-  struct Data2 { data: array<vec2<u32>>; };
+  struct Data { data: array<u32> };
+  struct Data2 { data: array<vec2<u32>> };
 
   @binding(0) @group(0) var<storage, read> keys_src: Data2;
-  @binding(1) @group(0) var<storage, write> keys_dst: Data2;
+  @binding(1) @group(0) var<storage, read_write> keys_dst: Data2;
   @binding(2) @group(0) var<storage, read> copy_list: Data;
   @binding(3) @group(0) var<uniform> params: Parameters;
 
@@ -55,7 +54,7 @@ R"(
     }
   } 
  
-  @stage(compute) @workgroup_size(128, 1, 1)
+  @compute @workgroup_size(128, 1, 1)
   fn main(
     @builtin(workgroup_id) workgroup_id: vec3<u32>,
     @builtin(local_invocation_id) local_id: vec3<u32>,
