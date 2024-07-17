@@ -78,6 +78,8 @@ template <typename T>
     return vv;
   }
 
+  wgpu::ComputePassEncoder CreateTimestampedComputePass(const wgpu::CommandEncoder& encoder, const wgpu::QuerySet& querySet, uint32_t index);
+
   wgpu::ComputePipeline CreatePipeline(
     const wgpu::Device& device, 
     const wgpu::BindGroupLayout& bgl, 
@@ -85,12 +87,6 @@ template <typename T>
     const char* label
   ); 
 
-  void CreatePipelineFromFile(
-    const wgpu::Device& device, 
-    const wgpu::BindGroupLayout& bgl, 
-    const std::string& filename,
-    wgpu::ComputePipeline* pl
-  );
 
   inline std::mt19937& get_mt19937();
 

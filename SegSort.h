@@ -39,12 +39,7 @@ public:
         uint32_t count, 
         uint32_t segmentCount);
 
-    void Sort(
-        const wgpu::Device& device, 
-        const wgpu::ComputePassEncoder& computePass,
-        uint32_t count, 
-        uint32_t segmentCount
-    );
+    void Sort(const wgpu::CommandEncoder& encoder, const wgpu::QuerySet& querySet, uint32_t count, uint32_t segmentCount);
 
 private:
     const uint32_t nt = 128;

@@ -105,6 +105,16 @@ namespace ComputeUtil  {
             #endif
         }
     }
+    wgpu::ComputePassEncoder CreateTimestampedComputePass(const wgpu::CommandEncoder& encoder, const wgpu::QuerySet& querySet, uint32_t index) {
+    wgpu::ComputePassTimestampWrites writes;
+      writes.beginningOfPassWriteIndex = index * 2u;
+      writes.endOfPassWriteIndex = index * 2u + 1u;
+      writes.querySet = querySet;
+
+      wgpu::ComputePassDescriptor descriptor;
+      descriptor.timestampWrites = &writes;
+      return encoder.BeginComputePass(&descriptor);
+    }
 }
 
 

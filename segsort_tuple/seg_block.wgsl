@@ -93,7 +93,9 @@ R"(
   }
 
   fn shared_to_reg_thread(tid: u32) {
-    for (var i = 0u; i < 15u; i = i +1u) { local_keys[i] = shared_[15u * tid + i]; }
+    for (var i = 0u; i < 15u; i = i +1u) { 
+      local_keys[i] = shared_[15u * tid + i]; 
+    }
   }
 
   fn mem_to_reg_thread(global_offset: u32, tid: u32, count: u32) {

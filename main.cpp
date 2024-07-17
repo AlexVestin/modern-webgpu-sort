@@ -28,7 +28,7 @@ std::string PrintPos(const uint2& p) {
 }
 
 void Test(const wgpu::Device& device) {
-    const int iterations = 1;
+    const int iterations = 20;
   
   SegmentedSort sorter;
   const uint32_t maxCount = 12000000;
@@ -48,24 +48,28 @@ void Test(const wgpu::Device& device) {
     "SegmentsBuffer"
   );
 
+  const uint32_t numQueries = 8;
   wgpu::Buffer querySetBuffer = utils::CreateBuffer(
     device, 
-    2 * sizeof(uint64_t), 
+    numQueries * sizeof(uint64_t), 
     wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::QueryResolve,
     "QuerySet"
   );
 
   wgpu::QuerySetDescriptor querySetDescriptor;
-  querySetDescriptor.count = 2;
+  querySetDescriptor.count = numQueries;
   querySetDescriptor.label = "ComputeTime";
   querySetDescriptor.type = wgpu::QueryType::Timestamp;
 
   wgpu::QuerySet querySet = device.CreateQuerySet(&querySetDescriptor);
 
   sorter.Init(device, inputBuffer, maxCount, segmentsBuffer, maxNumSegments);
-  for (uint32_t count = 1920; count < 8000000;  count += count / 10) {
+  for (uint32_t count = 2000000; count <= 2000000;  count += count / 10) {
     uint64_t cpu_time = 0;
-    uint64_t gpu_time = 0;
+    std::array<uint64_t, numQueries / 2> gpu_times;
+    for(int i = 0; i < gpu_times.size(); i++) {
+        gpu_times[i] = 0u;
+    }
 
     int numSegments = ComputeUtil::div_up(count, 100);
 
@@ -80,31 +84,22 @@ void Test(const wgpu::Device& device) {
       ComputeUtil::BusyWaitDevice(device);
 
       wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+      sorter.Sort(encoder, querySet, count, numSegments);
 
-      wgpu::ComputePassTimestampWrites writes;
-      writes.beginningOfPassWriteIndex = 0u;
-      writes.endOfPassWriteIndex = 1u;
-      writes.querySet = querySet;
-
-      wgpu::ComputePassDescriptor descriptor;
-      descriptor.timestampWrites = &writes;
-      wgpu::ComputePassEncoder computePass = encoder.BeginComputePass(&descriptor);
-
-      sorter.Sort(device, computePass, count, numSegments);
-
-      computePass.End();
-      encoder.ResolveQuerySet(querySet, 0, 2, querySetBuffer, 0);
+      encoder.ResolveQuerySet(querySet, 0, numQueries, querySetBuffer, 0);
       auto commandBuffer = encoder.Finish();
 
       auto t0 = high_resolution_clock::now();
       device.GetQueue().Submit(1, &commandBuffer);
       ComputeUtil::BusyWaitDevice(device);
 
-      std::vector<uint64_t> queryData = ComputeUtil::CopyReadBackBuffer<uint64_t>(device, querySetBuffer, 2 * sizeof(uint64_t));
+      std::vector<uint64_t> queryData = ComputeUtil::CopyReadBackBuffer<uint64_t>(device, querySetBuffer, numQueries * sizeof(uint64_t));
       auto t1 = high_resolution_clock::now();
 
-
-      gpu_time += queryData[1] - queryData[0];
+        for(int i = 0; i < numQueries / 2; i++) {
+            gpu_times[i] += queryData[i * 2 + 1] - queryData[i * 2]; 
+        }
+    
       cpu_time += duration_cast<nanoseconds>(t1-t0).count();
 
       auto cmp = [](const uint2& a, const uint2& b) -> bool {
@@ -130,7 +125,15 @@ void Test(const wgpu::Device& device) {
         } 
       }
     }
-    std::cout << count << " " << (cpu_time / iterations) / 1000 << " " << ((gpu_time / iterations) / 1000) << std::endl;
+
+    std::cout << count << " " << (cpu_time / iterations) / 1000 << std::endl;
+    uint64_t tot_gpu = 0u;
+    for (int i = 0; i < numQueries / 2; i++) {
+        uint64_t v = ((gpu_times[i] / iterations) / 1000);
+        std::cout << " +    " << v << std::endl;
+        tot_gpu += v;
+    }
+    std::cout << " =    " << tot_gpu << std::endl;
   }
 
   sorter.Dispose();

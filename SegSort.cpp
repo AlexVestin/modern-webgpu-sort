@@ -368,12 +368,7 @@ void SegmentedSort::Upload(const wgpu::Device& device, uint32_t count, uint32_t 
   }
 }
 
-void SegmentedSort::Sort(
-  const wgpu::Device& device, 
-  const wgpu::ComputePassEncoder& computePass, 
-  uint32_t count, 
-  uint32_t segmentCount
-) {
+void SegmentedSort::Sort(const wgpu::CommandEncoder& encoder, const wgpu::QuerySet& querySet, uint32_t count, uint32_t segmentCount) {
   if (count > maxCount || segmentCount > maxNumSegments) {
     std::cerr << "SegmentedSort: need to resize (" << count  << "," << maxCount << ")";
     exit(1);
@@ -386,37 +381,51 @@ void SegmentedSort::Sort(
   int num_partition_ctas = ComputeUtil::div_up(num_partitions, nt2 - 1);
   uint32_t numBinarySearchDispatch = ComputeUtil::div_up(num_partitions, nv);
 
-  computePass.SetPipeline(clearPipeline);
-  computePass.SetBindGroup(0, clearBindGroup);
-  computePass.DispatchWorkgroups(ComputeUtil::div_up(maxNumPasses * 24, nv));
- 
-  computePass.SetPipeline(binarySearchPipeline);
-  computePass.SetBindGroup(0, binarySearchBindGroup);
-  computePass.DispatchWorkgroups(numBinarySearchDispatch);
 
-  computePass.SetPipeline(blockPipeline[blockBindgroupIndex]);
-  computePass.SetBindGroup(0, blockBindGroups[blockBindgroupIndex]);
-  computePass.DispatchWorkgroups(numCtas);
+  auto clearPass = ComputeUtil::CreateTimestampedComputePass(encoder, querySet, 0);
+  clearPass.SetPipeline(clearPipeline);
+  clearPass.SetBindGroup(0, clearBindGroup);
+  clearPass.DispatchWorkgroups(ComputeUtil::div_up(maxNumPasses * 24, nv));
+  clearPass.End();
+  
+  auto searchPass = ComputeUtil::CreateTimestampedComputePass(encoder, querySet, 1);
+  searchPass.SetPipeline(binarySearchPipeline);
+  searchPass.SetBindGroup(0, binarySearchBindGroup);
+  searchPass.DispatchWorkgroups(numBinarySearchDispatch);
+  searchPass.End();
+
+  auto blockPass = ComputeUtil::CreateTimestampedComputePass(encoder, querySet, 2);
+  blockPass.SetPipeline(blockPipeline[blockBindgroupIndex]);
+  blockPass.SetBindGroup(0, blockBindGroups[blockBindgroupIndex]);
+  blockPass.DispatchWorkgroups(numCtas);
+  blockPass.End();
+
+
+  previousCount = count;
+  if (numPasses == 0) {
+    return;
+  }
   
   uint32_t mergeBindgroupIndex = 0;
   if (1 & numPasses) {
     mergeBindgroupIndex++;
   }
-
+  
+  
+  auto mergePass = ComputeUtil::CreateTimestampedComputePass(encoder, querySet, 3);
   for (int pass = 0; pass < numPasses; pass++) {
-    computePass.SetPipeline(partitionPipeline);
-    computePass.SetBindGroup(0, partitionBindGroups[mergeBindgroupIndex % 2]);
-    computePass.DispatchWorkgroups(num_partition_ctas);
+    mergePass.SetPipeline(partitionPipeline);
+    mergePass.SetBindGroup(0, partitionBindGroups[mergeBindgroupIndex % 2]);
+    mergePass.DispatchWorkgroups(num_partition_ctas);
     
-    computePass.SetPipeline(mergePipeline);
-    computePass.SetBindGroup(0, mergeBindGroups[mergeBindgroupIndex % 2]);
-    computePass.DispatchWorkgroupsIndirect(opCounterBuffer, (pass * 6) * sizeof(int));
+    mergePass.SetPipeline(mergePipeline);
+    mergePass.SetBindGroup(0, mergeBindGroups[mergeBindgroupIndex % 2]);
+    mergePass.DispatchWorkgroupsIndirect(opCounterBuffer, (pass * 6) * sizeof(int));
 
-    computePass.SetPipeline(copyPipeline);
-    computePass.SetBindGroup(0, copyBindGroups[mergeBindgroupIndex % 2]);
-    computePass.DispatchWorkgroupsIndirect(opCounterBuffer, ((pass*2+1) * 3) * sizeof(int));
+    mergePass.SetPipeline(copyPipeline);
+    mergePass.SetBindGroup(0, copyBindGroups[mergeBindgroupIndex % 2]);
+    mergePass.DispatchWorkgroupsIndirect(opCounterBuffer, ((pass*2+1) * 3) * sizeof(int));
     mergeBindgroupIndex++;
   }
-
-  previousCount = count;
+  mergePass.End();
 }
