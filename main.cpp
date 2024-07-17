@@ -21,16 +21,14 @@ uint32_t unpack_y(const uint2& p) {
   return p.x >> 16u; 
 }
 
-
 std::string PrintPos(const uint2& p) {
   std::stringstream ss;
   ss << "{ x: " << unpack_x(p) << " y: " << unpack_y(p) << " }";
   return ss.str(); 
 }
 
-
 void Test(const wgpu::Device& device) {
-    const int iterations = 5;
+    const int iterations = 1;
   
   SegmentedSort sorter;
   const uint32_t maxCount = 12000000;
@@ -50,9 +48,25 @@ void Test(const wgpu::Device& device) {
     "SegmentsBuffer"
   );
 
+  wgpu::Buffer querySetBuffer = utils::CreateBuffer(
+    device, 
+    2 * sizeof(uint64_t), 
+    wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::QueryResolve,
+    "QuerySet"
+  );
+
+  wgpu::QuerySetDescriptor querySetDescriptor;
+  querySetDescriptor.count = 2;
+  querySetDescriptor.label = "ComputeTime";
+  querySetDescriptor.type = wgpu::QueryType::Timestamp;
+
+  wgpu::QuerySet querySet = device.CreateQuerySet(&querySetDescriptor);
+
   sorter.Init(device, inputBuffer, maxCount, segmentsBuffer, maxNumSegments);
   for (uint32_t count = 1920; count < 8000000;  count += count / 10) {
+    uint64_t cpu_time = 0;
     uint64_t gpu_time = 0;
+
     int numSegments = ComputeUtil::div_up(count, 100);
 
     for (uint32_t it = 0; it < iterations; it++)  {
@@ -61,22 +75,37 @@ void Test(const wgpu::Device& device) {
 
       device.GetQueue().WriteBuffer(inputBuffer, 0, vec.data(), vec.size() * sizeof(uint2));
       device.GetQueue().WriteBuffer(segmentsBuffer, 0, segments.data(), segments.size() * sizeof(int));
-
       sorter.Upload(device, count, numSegments);
 
+      ComputeUtil::BusyWaitDevice(device);
+
       wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
-      wgpu::ComputePassEncoder computePass = encoder.BeginComputePass();
+
+      wgpu::ComputePassTimestampWrites writes;
+      writes.beginningOfPassWriteIndex = 0u;
+      writes.endOfPassWriteIndex = 1u;
+      writes.querySet = querySet;
+
+      wgpu::ComputePassDescriptor descriptor;
+      descriptor.timestampWrites = &writes;
+      wgpu::ComputePassEncoder computePass = encoder.BeginComputePass(&descriptor);
+
       sorter.Sort(device, computePass, count, numSegments);
-      
 
       computePass.End();
+      encoder.ResolveQuerySet(querySet, 0, 2, querySetBuffer, 0);
       auto commandBuffer = encoder.Finish();
 
       auto t0 = high_resolution_clock::now();
       device.GetQueue().Submit(1, &commandBuffer);
       ComputeUtil::BusyWaitDevice(device);
+
+      std::vector<uint64_t> queryData = ComputeUtil::CopyReadBackBuffer<uint64_t>(device, querySetBuffer, 2 * sizeof(uint64_t));
       auto t1 = high_resolution_clock::now();
-      gpu_time += duration_cast<nanoseconds>(t1-t0).count();
+
+
+      gpu_time += queryData[1] - queryData[0];
+      cpu_time += duration_cast<nanoseconds>(t1-t0).count();
 
       auto cmp = [](const uint2& a, const uint2& b) -> bool {
         return  a.x < b.x;
@@ -101,7 +130,7 @@ void Test(const wgpu::Device& device) {
         } 
       }
     }
-    std::cout << count << " " << (gpu_time / iterations) / 1000 << std::endl;
+    std::cout << count << " " << (cpu_time / iterations) / 1000 << " " << ((gpu_time / iterations) / 1000) << std::endl;
   }
 
   sorter.Dispose();
@@ -112,7 +141,7 @@ void Test(const wgpu::Device& device) {
 int main() {
     dawnProcSetProcs(&dawn::native::GetProcs());
 
-    std::vector<const char*> enableToggleNames = { "allow_unsafe_apis", "disable_robustness" };
+    std::vector<const char*> enableToggleNames = { "allow_unsafe_apis" };
     std::vector<const char*> disabledToggleNames = { };
 
     wgpu::DawnTogglesDescriptor toggles;
@@ -135,4 +164,5 @@ int main() {
     wgpu::Device device = NativeUtils::SetupDevice(instance, adapter);
 
     Test(device);
+    device.Destroy();
 }
