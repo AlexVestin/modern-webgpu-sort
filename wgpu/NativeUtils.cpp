@@ -99,13 +99,18 @@ wgpu::Device SetupDevice(const std::unique_ptr<wgpu::Instance>& instance, const 
     deviceDesc.uncapturedErrorCallbackInfo = {nullptr, PrintDeviceError, nullptr};
     deviceDesc.deviceLostCallbackInfo = {nullptr, wgpu::CallbackMode::AllowSpontaneous, PrintDeviceLoss, nullptr};
 
-    std::vector<wgpu::FeatureName> requiredFeatures = {wgpu::FeatureName::TimestampQuery, wgpu::FeatureName::PixelLocalStorageCoherent};
+    std::vector<wgpu::FeatureName> requiredFeatures = {wgpu::FeatureName::TimestampQuery, wgpu::FeatureName::Subgroups};
     deviceDesc.requiredFeatures = requiredFeatures.data();
     deviceDesc.requiredFeatureCount = requiredFeatures.size();
 
     wgpu::RequiredLimits limits;
+    limits.nextInChain = nullptr;
     limits.limits.maxStorageBuffersPerShaderStage = 10;
+    limits.limits.maxBufferSize = 1u << 30u;
+    limits.limits.maxStorageBufferBindingSize = 1u << 30u;
     deviceDesc.requiredLimits = &limits;
+
+    std::cout << "MaxBufferSize: " << limits.limits.maxBufferSize << std::endl; 
 
     wgpu::Device device;
     instance->WaitAny(
@@ -114,17 +119,17 @@ wgpu::Device SetupDevice(const std::unique_ptr<wgpu::Instance>& instance, const 
                           [](WGPURequestDeviceStatus status, WGPUDevice device, const char* message, void* userdata) {
                               if (status != WGPURequestDeviceStatus_Success) {
                                   std::cerr << "Failed to get an device:" << message << std::endl;
-                                  return;
+                                  exit(1);
                               }
                               *static_cast<wgpu::Device*>(userdata) = wgpu::Device::Acquire(device);
                           },
                           &device}),
         UINT64_MAX);
 
-    if (device == nullptr) {
-        std::cerr << "Failed to create device" << std::endl;
-        exit(1);
-    }
+    wgpu::SupportedLimits supportedLimits;
+    device.GetLimits(&supportedLimits);
+
+    std::cout << "Supported: " << supportedLimits.limits.maxBufferSize << " " << supportedLimits.limits.maxStorageBufferBindingSize << std::endl;
 
     return device;
 }

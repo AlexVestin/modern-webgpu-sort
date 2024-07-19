@@ -16,6 +16,7 @@ set(SOURCES
   "wgpu/DawnInfo.cpp"
   "wgpu/NativeUtils.cpp"
   "wgpu/WGPUHelpers.cpp"
+  "Subgroups.cpp"
 )
 
 MESSAGE("${CMAKE_CXX_FLAGS}")

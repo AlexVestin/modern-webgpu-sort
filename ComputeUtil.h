@@ -127,6 +127,7 @@ template <typename T>
   );
 
   void BusyWaitDevice(
+    const std::unique_ptr<wgpu::Instance>& instance,
     const wgpu::Device& device
   );
 } // namespace ComputeUtil
