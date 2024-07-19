@@ -42,7 +42,7 @@ namespace ComputeUtil  {
     }
 
     std::vector<uint2> fill_random_pairs(int a, int b, size_t count) {
-        std::uniform_int_distribution<int> d(a, b);
+        std::uniform_int_distribution<uint32_t> d(a, b);
         std::vector<uint2> data(count);
 
         for (uint2& i : data) {
