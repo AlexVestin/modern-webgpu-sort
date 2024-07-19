@@ -53,11 +53,11 @@ namespace ComputeUtil  {
         return data;
     }
 
-    std::vector<int> fill_random_cpu(int a, int b, size_t count, bool sorted) {
-        std::uniform_int_distribution<int> d(a, b);
-        std::vector<int> data(count);
+    std::vector<uint32_t> fill_random_cpu(uint32_t a, uint32_t b, size_t count, bool sorted) {
+        std::uniform_int_distribution<uint32_t> d(a, b);
+        std::vector<uint32_t> data(count);
 
-        for(int& i : data)
+        for(uint32_t& i : data)
             i = d(get_mt19937());
         
         if (sorted) {

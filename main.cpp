@@ -80,15 +80,16 @@ void TestSubgroups(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::
 
     uint32_t count = 1u << 27u;
 
-    std::vector<int> data = ComputeUtil::fill_random_cpu(0, UINT32_MAX, count, false);
+    std::vector<uint32_t> data = ComputeUtil::fill_random_cpu(0, UINT32_MAX, count, false);
     wgpu::Buffer inputBuffer =
         utils::CreateBufferFromData(device, data.data(), data.size() * sizeof(uint32_t), copyAllUsage, "InputData");
+
     sorter.Init(device, inputBuffer, count);
     sorter.Upload(device, count);
 
     uint64_t total = 0u;
     for (int i = 0; i < iterations; i++) {
-        std::vector<int> data = ComputeUtil::fill_random_cpu(0, UINT32_MAX, count, false);
+        std::vector<uint32_t> data = ComputeUtil::fill_random_cpu(0, UINT32_MAX, count, false);
         queryContainer.Reset();
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         encoder.WriteBuffer(inputBuffer, 0, reinterpret_cast<const uint8_t*>(data.data()),
@@ -105,23 +106,23 @@ void TestSubgroups(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::
         total += queryContainer.GetTotal();
     }
 
+    std::cout << "Total: " << total / static_cast<float>(1000 * 1000 * iterations) << " " << total << std::endl;
+
     std::vector<uint32_t> output =
         ComputeUtil::CopyReadBackBuffer<uint32_t>(device, inputBuffer, count * sizeof(uint32_t));
 
     for (int i = 0; i < count; i += 32) {
         uint32_t last = 0u;
-        for (int i = 0; i < 32; i++) {
-            uint32_t v = output[i];
+        for (int j = 0; j < 32; j++) {
+            uint32_t v = output[i + j];
             if (v < last) {
-                std::cerr << "Sort failed" << std::endl;
+                std::cerr << "Sort failed: " << i + j << std::endl;
                 exit(1);
             }
             // seen[v] = true;
             last = v;
         }
     }
-
-    std::cout << "Total: " << total / static_cast<float>(1000 * 1000 * iterations) << " " << total << std::endl;
 }
 
 void TestSegsort(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::Device& device) {
@@ -156,7 +157,7 @@ void TestSegsort(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::De
 
         for (uint32_t it = 0; it < iterations; it++) {
             std::vector<uint2> vec = ComputeUtil::fill_random_pairs(0, UINT32_MAX, count);
-            std::vector<int> segments = ComputeUtil::fill_random_cpu(0, count - 1, numSegments, true);
+            std::vector<uint32_t> segments = ComputeUtil::fill_random_cpu(0u, count - 1, numSegments, true);
 
             device.GetQueue().WriteBuffer(inputBuffer, 0, vec.data(), vec.size() * sizeof(uint2));
             device.GetQueue().WriteBuffer(segmentsBuffer, 0, segments.data(), segments.size() * sizeof(int));
@@ -222,7 +223,7 @@ void TestSegsort(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::De
 int main() {
     dawnProcSetProcs(&dawn::native::GetProcs());
 
-    std::vector<const char*> enableToggleNames = {"allow_unsafe_apis"};
+    std::vector<const char*> enableToggleNames = {"allow_unsafe_apis", "dump_shaders"};
     std::vector<const char*> disabledToggleNames = {};
 
     wgpu::DawnTogglesDescriptor toggles;

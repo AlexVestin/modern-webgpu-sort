@@ -72,7 +72,7 @@ template <typename T>
 
     utils::BusyWaitDevice(device);
 
-    std::vector<T> vv = std::move(ReadBackBuffer<T>(device, copyBuffer, byteSize));
+    std::vector<T> vv = ReadBackBuffer<T>(device, copyBuffer, byteSize);
     copyBuffer.Destroy();
 
     return vv;
@@ -104,9 +104,9 @@ template <typename T>
     size_t count
   );
 
-  std::vector<int> fill_random_cpu(
-    int a, 
-    int b, 
+  std::vector<uint32_t> fill_random_cpu(
+    uint32_t a, 
+    uint32_t b, 
     size_t count, 
     bool sorted = false
   );

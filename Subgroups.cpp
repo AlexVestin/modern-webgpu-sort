@@ -10,12 +10,6 @@ struct UniformData {
 };
 
 void SubgroupSort::Init(const wgpu::Device& device, const wgpu::Buffer& inputBuffer, uint32_t inputSize) {
-
-   wgpu::SupportedLimits supportedLimits;
-    device.GetLimits(&supportedLimits);
-
-    std::cout << "Supported -- : " << supportedLimits.limits.maxBufferSize << std::endl;
-
     auto bgl = utils::MakeBindGroupLayout(
     device, "SubgroupsSort", {
         { 0, wgpu::ShaderStage::Compute, wgpu::BufferBindingType::Storage },
@@ -27,7 +21,6 @@ void SubgroupSort::Init(const wgpu::Device& device, const wgpu::Buffer& inputBuf
     , "Sort::Subgroups"
   );
 
-
   uniformBuffer = utils::CreateBuffer(device, sizeof(UniformData), wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst, "SubgroupUniforms");
 
   bindGroup = utils::MakeBindGroup(
@@ -36,17 +29,20 @@ void SubgroupSort::Init(const wgpu::Device& device, const wgpu::Buffer& inputBuf
           { 0, inputBuffer },
           { 1, uniformBuffer }
     });
-
-    std::cout << "eof" << std::endl;
 }
 
 void SubgroupSort::Upload(const wgpu::Device& device, uint32_t count) {
     uint32_t numWgs = ComputeUtil::div_up(count, 32);
-    uint32_t x = static_cast<uint32_t>(std::sqrt(static_cast<double>(numWgs)));
-    
+   
     UniformData data;
     data.count = count;
-    data.step = x;
+
+    if (numWgs >= 0xffffu) {
+      uint32_t x = static_cast<uint32_t>(std::sqrt(static_cast<double>(numWgs)));
+      data.step = x;
+    } else {
+      data.step = 1u;
+    }
 
     device.GetQueue().WriteBuffer(uniformBuffer, 0, &data, sizeof(UniformData));
 }
@@ -56,14 +52,18 @@ void SubgroupSort::Sort(const wgpu::CommandEncoder& encoder, const wgpu::QuerySe
     auto sortPass = ComputeUtil::CreateTimestampedComputePass(encoder, querySet, 0);
     
     uint32_t numWgs = ComputeUtil::div_up(count, 32);
-    uint32_t x = static_cast<uint32_t>(std::sqrt(static_cast<double>(numWgs)));
-    uint32_t y = x + 1;
 
-    std::cout << "Launching: " << x * y << " workgroups for " << numWgs << std::endl;
-    
     sortPass.SetPipeline(pipeline);
     sortPass.SetBindGroup(0, bindGroup);
-    sortPass.DispatchWorkgroups(x, y);
+
+  if (numWgs >= 0xffffu) {
+      uint32_t x = static_cast<uint32_t>(std::sqrt(static_cast<double>(numWgs)));
+      uint32_t y = x + 1;
+      sortPass.DispatchWorkgroups(x, y);
+    } else {
+      sortPass.DispatchWorkgroups(numWgs);
+    }
+    
     sortPass.End();
 }
 
