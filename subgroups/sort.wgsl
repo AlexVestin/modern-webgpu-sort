@@ -16,8 +16,6 @@ R"(
   }
 
   const WG_SIZE = 32u;
-
-  var<workgroup> shared_mem: array<u32, 32>;
  
   @compute @workgroup_size(WG_SIZE, 1, 1)
   fn main(
@@ -34,6 +32,7 @@ R"(
 
     var geMask = getLaneMaskLt(sg_id);
     let key = data[global_invocation_id.x];
+    let mask_index = local_id.x / 32u;
 
     for (var bit = 0u; bit < 32u; bit++) {
         let currentBit = 1u << bit;

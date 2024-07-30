@@ -78,9 +78,9 @@ void TestSubgroups(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::
     QueryContainer queryContainer(device, 2);
     uint32_t iterations = 10;
 
-    uint32_t count = 1u << 27u;
+    uint32_t count = 1u << 22u;
 
-    std::vector<uint32_t> data = ComputeUtil::fill_random_cpu(0, UINT32_MAX, count, false);
+    std::vector<uint32_t> data = ComputeUtil::fill_random_cpu(0, UINT16_MAX, count, false);
     wgpu::Buffer inputBuffer =
         utils::CreateBufferFromData(device, data.data(), data.size() * sizeof(uint32_t), copyAllUsage, "InputData");
 
@@ -89,7 +89,7 @@ void TestSubgroups(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::
 
     uint64_t total = 0u;
     for (int i = 0; i < iterations; i++) {
-        std::vector<uint32_t> data = ComputeUtil::fill_random_cpu(0, UINT32_MAX, count, false);
+        std::vector<uint32_t> data = ComputeUtil::fill_random_cpu(0, UINT16_MAX, count, false);
         queryContainer.Reset();
         wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
         encoder.WriteBuffer(inputBuffer, 0, reinterpret_cast<const uint8_t*>(data.data()),

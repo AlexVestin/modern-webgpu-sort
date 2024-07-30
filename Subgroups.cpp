@@ -32,7 +32,7 @@ void SubgroupSort::Init(const wgpu::Device& device, const wgpu::Buffer& inputBuf
 }
 
 void SubgroupSort::Upload(const wgpu::Device& device, uint32_t count) {
-    uint32_t numWgs = ComputeUtil::div_up(count, 32);
+    uint32_t numWgs = ComputeUtil::div_up(count, wgSize);
    
     UniformData data;
     data.count = count;
@@ -51,7 +51,7 @@ void SubgroupSort::Upload(const wgpu::Device& device, uint32_t count) {
 void SubgroupSort::Sort(const wgpu::CommandEncoder& encoder, const wgpu::QuerySet& querySet, uint32_t count) {
     auto sortPass = ComputeUtil::CreateTimestampedComputePass(encoder, querySet, 0);
     
-    uint32_t numWgs = ComputeUtil::div_up(count, 32);
+    uint32_t numWgs = ComputeUtil::div_up(count, wgSize);
 
     sortPass.SetPipeline(pipeline);
     sortPass.SetBindGroup(0, bindGroup);

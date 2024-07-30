@@ -23,4 +23,5 @@ private:
     wgpu::ComputePipeline pipeline;
     wgpu::BindGroup bindGroup;
     wgpu::Buffer uniformBuffer;
+    const uint32_t wgSize = 32u;
 };
