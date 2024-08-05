@@ -17,3 +17,4 @@ main
 
 cargo/
 corrosion/
+libkurbo_bridge.a
