@@ -166,6 +166,8 @@ void TestSegsort(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::De
             ComputeUtil::BusyWaitDevice(instance, device);
 
             wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
+            encoder.WriteTimestamp(queryContainer.querySet, 1);
+            
             sorter.Sort(encoder, queryContainer.querySet, count, numSegments);
             queryContainer.Resolve(encoder);
             auto commandBuffer = encoder.Finish();

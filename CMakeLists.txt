@@ -1,5 +1,13 @@
 cmake_minimum_required(VERSION 3.3.2)
 
+include(FetchContent)
+FetchContent_Declare(
+    Corrosion
+    GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+    GIT_TAG v0.4 # Optionally specify a commit hash, version tag or branch here
+)
+FetchContent_MakeAvailable(Corrosion)
+
 project(main CXX)
 
 if(NOT CMAKE_BUILD_TYPE)
@@ -19,9 +27,25 @@ set(SOURCES
   "Subgroups.cpp"
 )
 
+set(VECTOR_SOURCES 
+  "ComputeUtil.cpp"
+  "wgpu/DawnInfo.cpp"
+  "wgpu/NativeUtils.cpp"
+  "wgpu/WGPUHelpers.cpp"
+  "vector/Flatten.cpp"
+  "vector/path/LTRBRect.cpp"
+  "vector/path/SVGUtil.cpp"
+  "vector/path/VPaint.cpp"
+  "vector/path/VPath.cpp"
+  "vector/path/VPoint.cpp"
+  "vector/vector.cpp"
+)
+
 MESSAGE("${CMAKE_CXX_FLAGS}")
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+
+corrosion_import_crate(MANIFEST_PATH dependencies/kurbo_bridge/Cargo.toml)
+add_executable(${PROJECT_NAME} ${VECTOR_SOURCES})
 
 set(TINT_BUILD_DOCS OFF CACHE BOOL "Enable building tint docs." FORCE)
 set(TINT_BUILD_TESTS OFF CACHE BOOL "Enable building tint tests." FORCE)
@@ -43,6 +67,7 @@ set (DAWN_LIBRARIES
 )
 
 target_link_libraries(${PROJECT_NAME} ${DAWN_LIBRARIES})
+target_link_libraries(${PROJECT_NAME} kurbo_bridge)
 
 set_target_properties(${CMAKE_PROJECT_NAME}
   PROPERTIES
