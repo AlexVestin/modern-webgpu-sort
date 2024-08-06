@@ -13,7 +13,7 @@ std::vector<FlatCommand> FlattenCommands(const std::vector<VPathVerb>& verbs, co
     for (auto& verb: verbs) {
         switch (verb) {
             case VPathVerb::kClose:
-                output.push_back({verb, first.x, first.y});
+                output.push_back({VPathVerb::kLine, first.x, first.y});
                 break;
 
             case VPathVerb::kMove:
