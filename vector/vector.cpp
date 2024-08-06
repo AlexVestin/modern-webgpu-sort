@@ -5,15 +5,26 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <chrono>
 
 #include "Flatten.h"
 #include "path/SVGUtil.h"
 
-#include <chrono>
+#include "../wgpu/NativeUtils.h"
+#include "../ComputeUtil.h"
+
+
+
+static const wgpu::BufferUsage storageUsage = wgpu::BufferUsage::Storage;
+static const wgpu::BufferUsage copyDstUsage = storageUsage | wgpu::BufferUsage::CopyDst;
+static const wgpu::BufferUsage copySrcUsage = storageUsage | wgpu::BufferUsage::CopySrc;
+static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
+
+
+static std::unique_ptr<wgpu::Instance> instance;
 
 const uint32_t TILE_SIZE = 4u;
 const uint32_t linesPerSpan = 4u;
-
 
 const float TILE_SIZE_DIV = 1.0f / static_cast<float>(TILE_SIZE);
 uint32_t under = 0u;
@@ -449,6 +460,31 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 }
 
 int main() {
+    dawnProcSetProcs(&dawn::native::GetProcs());
+
+    std::vector<const char*> enableToggleNames = {"allow_unsafe_apis", "dump_shaders"};
+    std::vector<const char*> disabledToggleNames = {};
+
+    wgpu::DawnTogglesDescriptor toggles;
+    toggles.enabledToggles = enableToggleNames.data();
+    toggles.enabledToggleCount = enableToggleNames.size();
+    toggles.disabledToggles = disabledToggleNames.data();
+    toggles.disabledToggleCount = disabledToggleNames.size();
+
+    wgpu::InstanceDescriptor instanceDescriptor{};
+    instanceDescriptor.nextInChain = &toggles;
+    instanceDescriptor.features.timedWaitAnyEnable = true;
+    instance = std::make_unique<wgpu::Instance>(wgpu::CreateInstance(&instanceDescriptor));
+
+    if (instance == nullptr) {
+        std::cerr << "Failed to create instance" << std::endl;
+        exit(1);
+    }
+
+    wgpu::Adapter adapter = NativeUtils::SetupAdapter(instance);
+    wgpu::Device device = NativeUtils::SetupDevice(instance, adapter);
+
+
     using std::chrono::milliseconds;
 
     std::ifstream t("ghost.svg");
@@ -469,6 +505,13 @@ int main() {
     uint32_t numDrawSpans = 0u;
     uint32_t numIndices = 0u;
 
+
+    wgpu::Buffer pathInfoBuffer;
+    wgpu::Buffer lineIndexBuffer;
+    wgpu::Buffer flatLinePointBuffer;
+    wgpu::Buffer drawSpansBuffer;
+
+
     
     std::chrono::high_resolution_clock::time_point h_start, h_end;
     for (int j = 0; j < 1; j++) {    
@@ -481,6 +524,8 @@ int main() {
         indices.reserve(1 << 20);
         drawSpans.reserve(1 << 20);
 
+        std::vector<uint32_t> colors(elements.size());
+
         for (int i = 0; i < elements.size(); i++) {
             auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
@@ -489,8 +534,10 @@ int main() {
             auto flatLines = FlattenCommands(verbs, points, 0.15f);
             numFlatLines += flatLines.size();
 
+            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+                    el.paint.GetFillColor().GetU8ABGR();
+        
 
-            // std::vector<uint32_t> indices;
             uint32_t hits = 0u;
             std::vector<Span> spans = TraverseGrid(flatLines, hits);
             numSpans += spans.size();
@@ -499,6 +546,17 @@ int main() {
             });
             numSplits += MergeSpans(spans, flatLines, indices, drawSpans, i);
         }
+
+        pathInfoBuffer =
+            utils::CreateBufferFromData(device, colors.data(), colors.size() * sizeof(uint32_t), copyDstUsage, "PathInformation");
+
+        lineIndexBuffer =
+            utils::CreateBufferFromData(device, indices.data(), indices.size() * sizeof(uint32_t), copyDstUsage, "LineIndices");
+
+        wgpu::Buffer flatLinePointBuffer;
+
+
+
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
@@ -513,7 +571,6 @@ int main() {
                 under++;
             } else {
                 over++;
-
                 uint32_t mx = span.pathId >> 16u;
                 uint32_t pid = span.pathId & 0xffffu;
                 uint32_t tx = span.position & 0xffffu;                
@@ -526,5 +583,8 @@ int main() {
 
     std::cout << "Spans: " << numSpans << " lines: " << numFlatLines << " numSplits: " << numSplits << " numDrawSpans: " << numDrawSpans << " numIndices: " << numIndices << std::endl;
     std::cout << "Total: " << totalSpanCount << " over: " << over << " under: " << under << " area: " << (totalSpanArea / totalSpanCount) << " lua: " << static_cast<uint32_t>(totalLookupArea) / 10 << std::endl;
+
+
+    device.Destroy();
     return 0;
 }
