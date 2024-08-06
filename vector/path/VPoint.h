@@ -73,7 +73,7 @@ struct VPoint {
         return {0.f, 0.f};
     }
 
-    VPoint Lerp(const VPoint& other, float t) const { return (1.0 - t) * (*this) + t * other; }
+    VPoint Lerp(const VPoint& other, float t) const { return (1.0f - t) * (*this) + t * other; }
 
     VPoint scale(float* transform) { return {x / transform[0], y / transform[3]}; }
 

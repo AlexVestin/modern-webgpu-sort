@@ -15,7 +15,10 @@ if(NOT CMAKE_BUILD_TYPE)
 endif()
 
 set (CMAKE_CXX_STANDARD 20)
+# set(CMAKE_CXX_FLAGS "-g -fsanitize=address -std=c++20")
+
 set(CMAKE_CXX_FLAGS "-O3 -std=c++20")
+
 
 set(SOURCES 
   "main.cpp"
