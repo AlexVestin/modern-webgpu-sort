@@ -12,11 +12,14 @@
 #include <chrono>
 
 const uint32_t TILE_SIZE = 4u;
+const uint32_t linesPerSpan = 4u;
+
+
 const float TILE_SIZE_DIV = 1.0f / static_cast<float>(TILE_SIZE);
 uint32_t under = 0u;
 uint32_t over = 0u;
 uint32_t totalSpanCount = 0u;
-const uint32_t linesPerSpan = 8u;
+
 double totalSpanArea = 0.0f;
 double totalLookupArea = 0.0f;
 
@@ -26,6 +29,13 @@ struct Span {
     uint32_t lineEndIndex;
     int32_t spanMaxX;
     uint32_t type;
+};
+
+struct DrawSpan {
+    uint32_t position;
+    uint32_t lineStartIndex;
+    uint32_t lineEndIndex;
+    uint32_t pathId;
 };
 
 
@@ -84,16 +94,14 @@ void ValidateSpanLine(const Span& span, const std::vector<FlatCommand>& flatLine
     if (LOG) {
         std::cout << y  << " tilex: " << (span.key & 0xffff) << "  maxx: " << span.spanMaxX << " Type: " << span.type << std::endl;
     }
-    
-
     int32_t mx = -1111;
 
-    if (span.lineStartIndex > span.lineEndIndex & 0xffffffu) {
+    if (span.lineStartIndex > span.lineEndIndex) {
         std::cerr << "Empty span" << std::endl;
         exit(1);
     }
 
-    for (int i = span.lineStartIndex; i <= span.lineEndIndex & 0xffffffu; i++) {
+    for (int i = span.lineStartIndex; i <= span.lineEndIndex; i++) {
         const VPoint& p0 = flatLines[i - 1].point;
         const VPoint& p1 = flatLines[i].point;
 
@@ -202,7 +210,7 @@ void TestAllLines(const std::vector<FlatCommand>& flatLines, const std::vector<u
 }
 
 
-uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& flatLines) {
+uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& flatLines, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId) {
     int32_t backdrop = 0;
     uint32_t spanId = 0u;
     Span span = spans[0];
@@ -211,9 +219,6 @@ uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatComman
     uint32_t currentSpanY = span.key >> 16u;
     uint32_t currentSpanX = (span.key & 0xffffu);
     uint32_t spanLineCount = (span.lineEndIndex - span.lineStartIndex) + 1u;
-
-    uint32_t spanCount = 0u;
-
     
     for (int i = 1; i < spans.size(); i++) {
         const Span& newSpan = spans[i];
@@ -222,39 +227,38 @@ uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatComman
         uint32_t newSpanX  = (newSpan.key & 0xffffu);
 
         // TODO: validate spanLineCount > 1 is correct
-        bool canCommit = (newSpanX > maxSpanX) && ((backdrop % 2) == 0) && spanLineCount > 1;
-
-
+        bool canCommit = (newSpanX > maxSpanX) && (backdrop  == 0) && spanLineCount > 1;
         bool isSplit = newSpanY == currentSpanY && canCommit;
 
         if ((newSpanY != currentSpanY) || canCommit) {
-            // Commit
-            spanCount++;
-
             // uint32_t area =  ((maxSpanX + 1) - currentSpanX) * TILE_SIZE;
             // std::cout << "-ms: " << currentSpanY * TILE_SIZE << "x" << currentSpanX << "->" <<  maxSpanX << "(" << area  << ") " << spanLineCount  << std::endl;
-            // std::vector<uint32_t> allLines;
-            // for (int j = spanId; j < i; j++) {
-            //     const auto& s = spans[j];
-            //     ValidateSpanLine(s, flatLines, currentSpanY);
-            //     for (int k = s.lineStartIndex; k <= s.lineEndIndex; k++) {
-            //         allLines.push_back(k);
-            //     }
-            // }            
-            // TestAllLines(flatLines, allLines, VPoint::Make(currentSpanX, currentSpanY), maxSpanX);    
-            // if (spanLineCount <= 1) {
-            //     std::cerr << "Faulty line count: " << spanLineCount << " " << currentSpanY << std::endl;
-            //     exit(1);
-            // }
+            std::vector<uint32_t> allLines;
+            for (int j = spanId; j < i; j++) {
+                const auto& s = spans[j];
+                ValidateSpanLine(s, flatLines, currentSpanY);
+                for (int k = s.lineStartIndex; k <= s.lineEndIndex; k++) {
+                    allLines.push_back(k);
+                }
+            }            
+            TestAllLines(flatLines, allLines, VPoint::Make(currentSpanX, currentSpanY), maxSpanX);    
+            if (spanLineCount <= 1) {
+                std::cerr << "Faulty line count: " << spanLineCount << " " << currentSpanY << std::endl;
+                exit(1);
+            }
 
-            // if (spanLineCount >= linesPerSpan) {
-            //     over++;
-            //     totalLookupArea += ((maxSpanX + 1) - currentSpanX) * TILE_SIZE;
-            // } else {
-            //     under++;
-            // }
-            // totalSpanArea += area;
-            // maxLineCount = std::max(spanLineCount, maxLineCount);
+            DrawSpan ds;
+            ds.lineStartIndex = indices.size();
+            for (int j = spanId; j < i; j++) {
+                const auto& s = spans[j];
+                for (int k = s.lineStartIndex; k <= s.lineEndIndex; k++) {
+                    indices.push_back(k);
+                }
+            } 
+            ds.lineEndIndex = indices.size();
+            ds.pathId = (static_cast<uint32_t>((maxSpanX + 1u)) << 16u) | pathId;
+            ds.position = (currentSpanY << 16u) | currentSpanX;
+            drawSpans.push_back(ds);
             
             // set new span
             currentSpanY = newSpanY;
@@ -285,21 +289,22 @@ uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatComman
         }
     }
 
-    // if (spanLineCount >= linesPerSpan) {
-    //     over++;
-    //     totalLookupArea += ((maxSpanX + 1) - currentSpanX) * TILE_SIZE;
-    // } else {
-    //     under++;
-    // }
-    // totalSpanArea += ((maxSpanX + 1) - currentSpanX) * TILE_SIZE;
-
-
-    spanCount++;
-    totalSpanCount += spanCount;
+    DrawSpan ds;
+    ds.lineStartIndex = indices.size();
+    for (int j = spanId; j < spans.size(); j++) {
+        const auto& s = spans[j];
+        for (int k = s.lineStartIndex; k <= s.lineEndIndex; k++) {
+            indices.push_back(k);
+        }
+    } 
+    ds.lineEndIndex = indices.size();
+    ds.pathId = (static_cast<uint32_t>((maxSpanX + 1u)) << 16u) | pathId;
+    ds.position = (currentSpanY << 16u) | currentSpanX;
+    drawSpans.push_back(ds);
     return 0u;
 }
 
-std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines) {
+std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32_t& hits) {
     std::vector<Span> spans;
 
     spans.reserve(flatLines.size() / 2);
@@ -358,6 +363,8 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines) {
                     span.lineEndIndex = i;
                     span.spanMaxX = spanMaxX;
 
+                    hits += (i - startIndex) + 1u;
+
                     uint32_t type = p0.y > p1.y ? 1 : 2;
                     if (type == spanEntryDirection || spanEntryDirection == ~0u) {
                         span.type = type;
@@ -389,6 +396,7 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines) {
                 span.spanMaxX = spanMaxX;
                 span.type = 0;
 
+                hits += (i - startIndex);
                 // if we didn't exit the current span we dont need to update 
                 if (contourId < spans.size()) {
                     assert(contourId < spans.size());
@@ -437,7 +445,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
     p.LineTo(100.0, 100.0);
     lyra::SVGUtil::Element e;
     e.path = p;
-    return {e};
+    return { e };
 }
 
 int main() {
@@ -458,34 +466,65 @@ int main() {
     uint32_t numFlatLines = 0u;
     uint32_t numSpans  = 0u;
     uint32_t numSplits = 0u;
+    uint32_t numDrawSpans = 0u;
+    uint32_t numIndices = 0u;
+
+    
     std::chrono::high_resolution_clock::time_point h_start, h_end;
-    for (int j= 0 ; j < 1000; j++) {    
+    for (int j = 0; j < 1; j++) {    
         
         h_start = std::chrono::high_resolution_clock::now();
 
-   
+        std::vector<uint32_t> indices;
+        std::vector<DrawSpan> drawSpans;
+
+        indices.reserve(1 << 20);
+        drawSpans.reserve(1 << 20);
+
         for (int i = 0; i < elements.size(); i++) {
             auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
             const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
-            auto flatLines = FlattenCommands(verbs, points, 0.2f);
+            auto flatLines = FlattenCommands(verbs, points, 0.15f);
             numFlatLines += flatLines.size();
 
-            std::vector<Span> spans = TraverseGrid(flatLines);
+
+            // std::vector<uint32_t> indices;
+            uint32_t hits = 0u;
+            std::vector<Span> spans = TraverseGrid(flatLines, hits);
             numSpans += spans.size();
-            // std::sort(spans.begin(), spans.end(), [](const Span& s0, const Span& s1) {
-            //     return s0.key < s1.key;
-            // });
-            // numSplits += MergeSpans(spans, flatLines);
+            std::sort(spans.begin(), spans.end(), [](const Span& s0, const Span& s1) {
+                return s0.key < s1.key;
+            });
+            numSplits += MergeSpans(spans, flatLines, indices, drawSpans, i);
         }
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
+        numDrawSpans += drawSpans.size();
+        numIndices += indices.size();
+
+        uint32_t lookupArea = 0u;
+        for (const auto& span: drawSpans) {
+            uint32_t c = span.lineEndIndex - span.lineStartIndex;
+            if (c <= linesPerSpan) {
+                under++;
+            } else {
+                over++;
+
+                uint32_t mx = span.pathId >> 16u;
+                uint32_t pid = span.pathId & 0xffffu;
+                uint32_t tx = span.position & 0xffffu;                
+                lookupArea += (mx - tx)  * TILE_SIZE;
+            }
+        }
+        
+        std::cout << " LookupArea: " << lookupArea << std::endl;
     }
 
-    std::cout << "Spans: " << numSpans << " lines: " << numFlatLines << " numSplits: " << numSplits << std::endl;
+    std::cout << "Spans: " << numSpans << " lines: " << numFlatLines << " numSplits: " << numSplits << " numDrawSpans: " << numDrawSpans << " numIndices: " << numIndices << std::endl;
     std::cout << "Total: " << totalSpanCount << " over: " << over << " under: " << under << " area: " << (totalSpanArea / totalSpanCount) << " lua: " << static_cast<uint32_t>(totalLookupArea) / 10 << std::endl;
     return 0;
 }

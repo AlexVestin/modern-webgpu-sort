@@ -23,7 +23,9 @@ std::vector<FlatCommand> FlattenCommands(const std::vector<VPathVerb>& verbs, co
                 assert(i < points.size());
                 first = points[i];
                 // intentional fall through
-            case VPathVerb::kLine: {
+                [[fallthrough]];
+            case VPathVerb::kLine:  {
+                
                 assert(i < points.size());
                 const VPoint& line = points[i];
     
