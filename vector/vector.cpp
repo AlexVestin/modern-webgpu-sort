@@ -23,8 +23,8 @@ static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
 
 static std::unique_ptr<wgpu::Instance> instance;
 
-const uint32_t TILE_SIZE = 4u;
-const uint32_t linesPerSpan = 4u;
+const uint32_t TILE_SIZE = 2u;
+const uint32_t linesPerSpan = 12u;
 
 const float TILE_SIZE_DIV = 1.0f / static_cast<float>(TILE_SIZE);
 uint32_t under = 0u;
@@ -169,6 +169,9 @@ void ValidateSpanLine(const Span& span, const std::vector<FlatCommand>& flatLine
 
     if (mx != span.spanMaxX) {
         std::cerr << "Faulty max span x total check: " << mx << " " << span.spanMaxX << " (" << span.lineStartIndex << " " << span.lineEndIndex << ")" << std::endl;
+        for(int i = span.lineStartIndex; i < span.lineEndIndex; i++) {
+            std::cout << flatLines[i].point << std::endl;
+        }
         exit(1);
     }
 }
@@ -317,7 +320,6 @@ uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatComman
 
 std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32_t& hits) {
     std::vector<Span> spans;
-
     spans.reserve(flatLines.size() / 2);
     
     VPoint last;
@@ -334,39 +336,32 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
             const auto& line = flatLines[i];
             const VPoint& p0 = last;
             const VPoint& p1 = line.point;
-
-            float miny = std::min(p0.y, p1.y);
-            float maxy = std::max(p0.y, p1.y);
       
+            if (std::abs(p0.y - p1.y) < 1.0e-6f) {
+                spanMaxX = std::max(std::max(p0.x, p1.x), spanMaxX);
+                lastTileX = std::min(lastTileX, static_cast<uint32_t>(std::min(p0.x, p1.x)));
+                continue;
+            }
+            
             int32_t y0 = static_cast<int32_t>(p0.y * TILE_SIZE_DIV) * TILE_SIZE;
             int32_t y1 = static_cast<int32_t>(p1.y * TILE_SIZE_DIV) * TILE_SIZE;
-            int32_t dir = y1 > y0 ? TILE_SIZE : -TILE_SIZE;
-
+            int32_t dir = (y1 > y0) ? TILE_SIZE : -TILE_SIZE;
 
             float slope = (p1.x - p0.x) / (p1.y - p0.y);
-            float xv0, xv1;
+            float miny = std::min(p0.y, p1.y);
+            float maxy = std::max(p0.y, p1.y);
 
-            bool isHorizontal = std::abs(p0.y - p1.y) < 1.0e-6f;
-            if (isHorizontal) {
-                xv0 = p0.x;
-                xv1 = p1.x;
-            }
+            
 
             for (int yc = y0; (dir < 0 && yc >= y1) || (dir > 0 && yc <= y1); yc += dir) {                
-                if (!isHorizontal) {
-                    float yv0 = std::clamp(static_cast<float>(yc), miny, maxy);
-                    float yv1 = std::clamp(static_cast<float>(yc + TILE_SIZE), miny, maxy);
-                    xv0 = p0.x + (yv0 - p0.y) * slope;
-                    xv1 = p0.x + (yv1 - p0.y) * slope;
-                }
+                float yv0 = std::clamp(static_cast<float>(yc), miny, maxy);
+                float xv0 = p0.x + (yv0 - p0.y) * slope;
+
+                float yv1 = std::clamp(static_cast<float>(yc + TILE_SIZE), miny, maxy);
+                float xv1 = p0.x + (yv1 - p0.y) * slope;
 
                 float px = std::min(xv0, xv1);
                 if (i > 0 && lastTileY != yc) {
-                    if (lastTileX == ~0u || lastTileY == ~0u) {
-                        std::cerr << "LastTile not set: " << lastTileX << " " << lastTileY << " " << spanEntryDirection << std::endl;
-                        exit(1);
-                    }
-
                     // Commit on entering new span
                     Span span;
                     span.key = (lastTileY  << 16u) | (lastTileX & 0xffffu);
@@ -408,6 +403,7 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
                 span.type = 0;
 
                 hits += (i - startIndex);
+
                 // if we didn't exit the current span we dont need to update 
                 if (contourId < spans.size()) {
                     assert(contourId < spans.size());
@@ -434,7 +430,7 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
                 lastTileX = static_cast<uint32_t>(spanMaxX);
                 
                 // Next span is the start of the contour
-                contourId = spans.size() ;
+                contourId = spans.size();
             } else {
                 return spans;
             }
@@ -496,7 +492,9 @@ int main() {
     std::stringstream buffer;
     buffer << t.rdbuf();
     auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
-    auto elements = lyra::SVGUtil::ParseSVG(img, nullptr);
+
+    const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+    auto elements = lyra::SVGUtil::ParseSVG(img, transform);
 
     // auto elements = TestElements();
     uint32_t numFlatLines = 0u;
@@ -511,11 +509,8 @@ int main() {
     wgpu::Buffer flatLinePointBuffer;
     wgpu::Buffer drawSpansBuffer;
 
-
-    
     std::chrono::high_resolution_clock::time_point h_start, h_end;
-    for (int j = 0; j < 1; j++) {    
-        
+    for (int j = 0; j < 1000; j++) {    
         h_start = std::chrono::high_resolution_clock::now();
 
         std::vector<uint32_t> indices;
@@ -524,7 +519,7 @@ int main() {
         indices.reserve(1 << 20);
         drawSpans.reserve(1 << 20);
 
-        std::vector<uint32_t> colors(elements.size());
+        // std::vector<uint32_t> colors(elements.size());
 
         for (int i = 0; i < elements.size(); i++) {
             auto& el = elements[i];
@@ -534,8 +529,8 @@ int main() {
             auto flatLines = FlattenCommands(verbs, points, 0.15f);
             numFlatLines += flatLines.size();
 
-            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-                    el.paint.GetFillColor().GetU8ABGR();
+            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+            //         el.paint.GetFillColor().GetU8ABGR();
         
 
             uint32_t hits = 0u;
@@ -547,13 +542,11 @@ int main() {
             numSplits += MergeSpans(spans, flatLines, indices, drawSpans, i);
         }
 
-        pathInfoBuffer =
-            utils::CreateBufferFromData(device, colors.data(), colors.size() * sizeof(uint32_t), copyDstUsage, "PathInformation");
-
-        lineIndexBuffer =
-            utils::CreateBufferFromData(device, indices.data(), indices.size() * sizeof(uint32_t), copyDstUsage, "LineIndices");
-
-        wgpu::Buffer flatLinePointBuffer;
+        // pathInfoBuffer =
+        //     utils::CreateBufferFromData(device, colors.data(), colors.size() * sizeof(uint32_t), copyDstUsage, "PathInformation");
+        // lineIndexBuffer =
+        //     utils::CreateBufferFromData(device, indices.data(), indices.size() * sizeof(uint32_t), copyDstUsage, "LineIndices");
+        // wgpu::Buffer flatLinePointBuffer;
 
 
 
@@ -564,21 +557,21 @@ int main() {
         numDrawSpans += drawSpans.size();
         numIndices += indices.size();
 
-        uint32_t lookupArea = 0u;
-        for (const auto& span: drawSpans) {
-            uint32_t c = span.lineEndIndex - span.lineStartIndex;
-            if (c <= linesPerSpan) {
-                under++;
-            } else {
-                over++;
-                uint32_t mx = span.pathId >> 16u;
-                uint32_t pid = span.pathId & 0xffffu;
-                uint32_t tx = span.position & 0xffffu;                
-                lookupArea += (mx - tx)  * TILE_SIZE;
-            }
-        }
+        // uint32_t lookupArea = 0u;
+        // for (const auto& span: drawSpans) {
+        //     uint32_t c = span.lineEndIndex - span.lineStartIndex;
+        //     if (c <= linesPerSpan) {
+        //         under++;
+        //     } else {
+        //         over++;
+        //         uint32_t mx = span.pathId >> 16u;
+        //         uint32_t pid = span.pathId & 0xffffu;
+        //         uint32_t tx = span.position & 0xffffu;                
+        //         lookupArea += (mx - tx)  * TILE_SIZE;
+        //     }
+        // }
         
-        std::cout << " LookupArea: " << lookupArea << std::endl;
+        // std::cout << " LookupArea: " << lookupArea << std::endl;
     }
 
     std::cout << "Spans: " << numSpans << " lines: " << numFlatLines << " numSplits: " << numSplits << " numDrawSpans: " << numDrawSpans << " numIndices: " << numIndices << std::endl;
