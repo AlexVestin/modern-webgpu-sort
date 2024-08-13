@@ -10,6 +10,9 @@
 
 #include <thread>
 
+
+
+namespace ComputeUtil  {
 struct int2 {
   int32_t x;
   int32_t y;
@@ -19,9 +22,6 @@ struct uint2 {
   uint32_t x;
   uint32_t y;
 };
-
-namespace ComputeUtil  {
-
 
 template <typename T>
 std::vector<T> ReadBackBuffer(const wgpu::Device& device, const wgpu::Buffer& fromBuffer, uint32_t byteSize) {
