@@ -31,14 +31,6 @@
 #include "../ComputeUtil.h"
 
 
-static const wgpu::BufferUsage storageUsage = wgpu::BufferUsage::Storage;
-static const wgpu::BufferUsage copyDstUsage = storageUsage | wgpu::BufferUsage::CopyDst;
-static const wgpu::BufferUsage copySrcUsage = storageUsage | wgpu::BufferUsage::CopySrc;
-static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
-
-static std::unique_ptr<wgpu::Instance> instance;
-
-
 struct AtlasManager {
     AtlasManager(uint32_t width, uint32_t height) : atlasWidth{width}, atlasHeight{height} { }
 
@@ -330,33 +322,8 @@ std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT> atlas = {};
 std::array<uint8_t, IMAGE_WIDTH * IMAGE_HEIGHT> outAtlas = {};
 
 int main() {
-    dawnProcSetProcs(&dawn::native::GetProcs());
-
-    std::vector<const char*> enableToggleNames = {"allow_unsafe_apis", "dump_shaders"};
-    std::vector<const char*> disabledToggleNames = {};
-
-    wgpu::DawnTogglesDescriptor toggles;
-    toggles.enabledToggles = enableToggleNames.data();
-    toggles.enabledToggleCount = enableToggleNames.size();
-    toggles.disabledToggles = disabledToggleNames.data();
-    toggles.disabledToggleCount = disabledToggleNames.size();
-
-    wgpu::InstanceDescriptor instanceDescriptor{};
-    instanceDescriptor.nextInChain = &toggles;
-    instanceDescriptor.features.timedWaitAnyEnable = true;
-    instance = std::make_unique<wgpu::Instance>(wgpu::CreateInstance(&instanceDescriptor));
-
-    if (instance == nullptr) {
-        std::cerr << "Failed to create instance" << std::endl;
-        exit(1);
-    }
-
-    wgpu::Adapter adapter = NativeUtils::SetupAdapter(instance);
-    wgpu::Device device = NativeUtils::SetupDevice(instance, adapter);
-
     using std::chrono::milliseconds;
-
-    std::ifstream t("ghost.svg");
+    std::ifstream t("paper-1.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -369,132 +336,69 @@ int main() {
     const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
 
-    // auto elements = TestElements();
-    uint32_t numFlatLines = 0u;
-    uint32_t numSpans  = 0u;
-    uint32_t numDrawSpans = 0u;
-    uint32_t numIndices = 0u;
-
-    wgpu::Buffer pathInfoBuffer;
-    wgpu::Buffer lineIndexBuffer;
-    wgpu::Buffer flatLinePointBuffer;
-    wgpu::Buffer drawSpansBuffer;
-    wgpu::BindGroup drawBindGroup;
-    
     std::chrono::high_resolution_clock::time_point h_start, h_end;
-    for (int j = 0; j < 1; j++) {
-        h_start = std::chrono::high_resolution_clock::now();
+    for (int j = 0; j < 1000; j++) {
+        // std::vector<VPathVerb> flatVerbs;
+        // std::vector<VPoint> flatPoints;   
+        // // flatPoints.reserve(1 << 20);
+        // // flatVerbs.reserve(1 << 20);
+
         std::vector<uint32_t> colors(elements.size());
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
 
+        h_start = std::chrono::high_resolution_clock::now();
+        
         for (int i = 0; i < elements.size(); i++) {
-            std::vector<uint32_t> indices;
-            std::vector<DrawSpan> drawSpans;
-            std::vector<VPoint> flatLinePoints;
+            // std::vector<uint32_t> indices;
+            // std::vector<DrawSpan> drawSpans;
+            // std::vector<VPoint> flatLinePoints;
+            // indices.reserve(1 << 20);
+            // drawSpans.reserve(1 << 20);
 
-            indices.reserve(1 << 20);
-            drawSpans.reserve(1 << 20);
 
-
-            auto& el = elements[i];
+            const auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
             const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
-            auto flatLines = FlattenCommands(verbs, points, 0.20f);
 
-            // for(auto& fl: flatLines) {
-            //     std::cout << fl.point << std::endl;
+
+            // FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.10f);
+            auto flatLines = FlattenCommands(verbs, points, 0.10f);
+
+            // flatLinePoints.reserve(flatLines.size());
+            // for (auto& fl: flatLines) {
+            //     flatLinePoints.push_back(fl.point);
             // }
-            
-            flatLinePoints.reserve(flatLines.size());
-            for (auto& fl: flatLines) {
-                flatLinePoints.push_back(fl.point);
-            }
-
-            numFlatLines += flatLines.size();
-            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-                    el.paint.GetFillColor().GetU8ABGR();
-        
-
-            uint32_t hits = 0u;
-            std::vector<Span> spans = TraverseGrid(flatLines, hits);
-            numSpans += spans.size();
-            std::sort(spans.begin(), spans.end(), [](const Span& s0, const Span& s1) {
-                return s0.key < s1.key;
-            });
-
-            // for(auto& s: spans) {
-            //     std::cout << (s.key >> 16u) << " " << (s.key & 0xffffu) << " " << s.spanMaxX << std::endl;
-            // }
-            MergeSpans(spans, flatLines, indices, drawSpans, i, atlasManager);
-            RenderToAtlas(drawSpans, indices, flatLinePoints, atlas);
-            Render(drawSpans, indices, flatLinePoints, image, colors[i], atlas);
-            // break;
-
-            numDrawSpans += drawSpans.size();
-            numIndices += indices.size();
+            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+            //         el.paint.GetFillColor().GetU8ABGR();
+            // uint32_t hits = 0u;
+            // std::vector<Span> spans = TraverseGrid(flatLines, hits);
+            // std::sort(spans.begin(), spans.end(), [](const Span& s0, const Span& s1) {
+            //     return s0.key < s1.key;
+            // });
+            // MergeSpans(spans, flatLines, indices, drawSpans, i, atlasManager);
+            // RenderToAtlas(drawSpans, indices, flatLinePoints, atlas);
+            // Render(drawSpans, indices, flatLinePoints, image, colors[i], atlas);
         }
 
-        std::cout << "Used atlas space: " << atlasManager.UsedSpace() << std::endl;
 
+        // uint32_t channels = 4u;
+        // uint32_t bpr = IMAGE_WIDTH * channels;
+        // stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
+        // for (int i = 0; i < atlas.size(); i++) {
+        //     float area = atlas[i];
+        //     float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
+        //     outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
+        // }
+        // channels = 1u;
+        // bpr = IMAGE_WIDTH * channels;
+        // stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);
         
-        uint32_t channels = 4u;
-        uint32_t bpr = IMAGE_WIDTH * channels;
-        stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
-        
-        for (int i = 0; i < atlas.size(); i++) {
-            float area = atlas[i];
-            float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
-            outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
-        }
-
-        channels = 1u;
-        bpr = IMAGE_WIDTH * channels;
-        stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);
-        
-
-        
-        // Save image to disk
-        // pathInfoBuffer =
-        //     utils::CreateBufferFromData(device, colors.data(), colors.size() * sizeof(uint32_t), copyDstUsage, "PathInformation");
-        
-        // lineIndexBuffer =
-        //     utils::CreateBufferFromData(device, indices.data(), indices.size() * sizeof(uint32_t), copyDstUsage, "LineIndices");
-        
-        // flatLinePointBuffer = 
-        //     utils::CreateBufferFromData(device, flatLinePoints.data(), flatLinePoints.size() * sizeof(VPoint), copyDstUsage, "flatLinePoints");;
-
-        // drawSpansBuffer = 
-        //     utils::CreateBufferFromData(device, drawSpans.data(), drawSpans.size() * sizeof(DrawSpan), copyDstUsage, "DrawSpans");;
-
-
-        // // 
-        // wgpu::BindGroupLayout drawLayout = utils::MakeBindGroupLayout(device, "DrawBindGroupLayout", {
-        //     {0, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        //     {1, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        //     {2, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        //     {3, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        // });
-
-        // wgpu::BindGroup bindGroup = utils::MakeBindGroup(device, drawLayout, {
-        //     {0, pathInfoBuffer},
-        //     {1, lineIndexBuffer},
-        //     {2, flatLinePointBuffer},
-        //     {3, drawSpansBuffer},
-        // });
-
-        // wgpu::PipelineLayoutDescriptor descriptor;
-
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
     }
-
-    uint32_t total = numFlatLines * 16;
-
-    std::cout << "Totalbytes: "<< total << std::endl; 
-    std::cout << "Spans: " << numSpans << " lines: " << numFlatLines << " numDrawSpans: " << numDrawSpans << " numIndices: " << numIndices << std::endl;
-    device.Destroy();
+    
     return 0;
 }
