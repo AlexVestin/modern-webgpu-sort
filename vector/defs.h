@@ -9,7 +9,7 @@ const uint32_t DIRECTION_DOWN = 2u;
 const uint32_t TILE_SIZE = 16u;
 
 const float TILE_SIZE_DIV = 1.0f / static_cast<float>(TILE_SIZE);
-const uint32_t linesPerSpan = 400u;
+const uint32_t linesPerSpan = 20000u;
 
 struct Span {
     uint32_t key; // y 16 bits, x 16 bits 

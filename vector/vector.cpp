@@ -165,12 +165,13 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
             //     if (gap > 32) {
             //         // Emit previous
             //         EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX);
-            //         if (spanLineCount + lineCount > linesPerSpan) {
-            //             // Emit empty from end of last to start of new
-            //             EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-            //         } else {
-            //             EmitSpan(spanId, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-            //         }  
+            //         EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
+            //         // if (spanLineCount + lineCount > linesPerSpan) {
+            //         //     // Emit empty from end of last to start of new
+            //         //     EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
+            //         // } else {
+            //         //     EmitSpan(spanId, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
+            //         // }  
             //         // update left, but not spanId so we get all the relevant lines for the future
             //         currentSpanX = newSpanX;
             //     }   
@@ -215,8 +216,12 @@ void TraverseGrid(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVer
                 continue;
             }
 
-            // Ignore horizontal lines
             if (std::abs(p0.y - p1.y) < 1.0e-6f) {
+                // TODO: why cant we remove these
+                spanMaxX = std::max(std::max(p0.x, p1.x), spanMaxX);
+                lastTileX = std::min(lastTileX, static_cast<uint32_t>(std::min(p0.x, p1.x)));
+                // -- 
+
                 last = p1;
                 continue;
             }
@@ -313,6 +318,19 @@ void TraverseGrid(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVer
 }
 
 
+std::vector<lyra::SVGUtil::Element> TestElements() {
+    VPath p;
+    p.MoveTo(100.0, 100.0);
+    p.LineTo(200.0, 100.0);
+    p.LineTo(200.0, 200.0);
+    p.LineTo(100.0, 200.0);
+    p.LineTo(100.0, 100.0);
+    lyra::SVGUtil::Element e;
+    e.path = p;
+    return { e };
+}
+
+
 std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT> image = {};
 std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT> atlas = {};
 std::array<uint8_t, IMAGE_WIDTH * IMAGE_HEIGHT> outAtlas = {};
@@ -331,6 +349,7 @@ int main() {
 
     const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
+    // auto elements = TestElements();
 
     std::chrono::high_resolution_clock::time_point h_start, h_end;
     std::vector<uint32_t> colors(elements.size());
@@ -353,10 +372,6 @@ int main() {
         h_start = std::chrono::high_resolution_clock::now();
         
         for (int i = 0; i < elements.size(); i++) {
-
-            if(i != 0u && i < 2000) {
-                continue;
-            }
             const auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
             const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
