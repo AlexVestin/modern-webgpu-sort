@@ -287,7 +287,6 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
     for (int i = start; i < spans.size(); i++) {
         const DrawSpan& span = spans[i]; 
         uint32_t pathId = span.pathId & 0xffffu;
-        std::cout << pathId << std::endl;
         float4 color = unpack(colors[pathId]);
         
         uint32_t mx = span.pathId >> 16u;

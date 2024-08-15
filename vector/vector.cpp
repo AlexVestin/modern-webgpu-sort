@@ -282,7 +282,7 @@ void TraverseGrid(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVer
                 span.type = 0;
 
                 // if we didn't exit the current span we dont need to update 
-                if (contourId < spanStartSize) {
+                if (contourId < spans.size()) {
                     uint32_t contourType = spans[contourId].type;
                                         
                     if ((contourType == 0 && (spanEntryDirection == 0u || spanEntryDirection == ~0u)) || (contourType != spanEntryDirection)) {
