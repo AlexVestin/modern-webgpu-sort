@@ -98,18 +98,6 @@ struct AtlasManager {
     const uint32_t atlasHeight;
 };
 
-
-uint32_t over = 0u;
-uint32_t totalSpanCount = 0u;
-
-double totalSpanArea = 0.0f;
-double totalLookupArea = 0.0f;
-
-uint32_t ToTileIndex(float v) {
-    return std::floor(v / static_cast<float>(TILE_SIZE));
-} 
-
-
 uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& flatLines, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
 
     auto EmitSpan = [&indices, &pathId, &drawSpans, &atlasManager, &spans](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
