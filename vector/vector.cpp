@@ -9,10 +9,17 @@
 #include <deque>
 #include <list>
 
+#pragma GCC diagnostic push 
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
 #include "stb_image.h"
+#pragma GCC diagnostic pop
+
 
 #include "defs.h"
 #include "Validation.h"
@@ -98,8 +105,7 @@ struct AtlasManager {
     const uint32_t atlasHeight;
 };
 
-uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& flatLines, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
-
+void MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& flatLines, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
     auto EmitSpan = [&indices, &pathId, &drawSpans, &atlasManager, &spans](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
         DrawSpan ds;
         ds.lineStartIndex = indices.size();
@@ -186,9 +192,7 @@ uint32_t MergeSpans(const std::vector<Span>& spans, const std::vector<FlatComman
             backdrop--;
         }
     }
-
     EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX);
-    return 0u;
 }
 
 std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32_t& hits) {
@@ -368,7 +372,6 @@ int main() {
     // auto elements = TestElements();
     uint32_t numFlatLines = 0u;
     uint32_t numSpans  = 0u;
-    uint32_t numSplits = 0u;
     uint32_t numDrawSpans = 0u;
     uint32_t numIndices = 0u;
 
@@ -423,7 +426,7 @@ int main() {
             // for(auto& s: spans) {
             //     std::cout << (s.key >> 16u) << " " << (s.key & 0xffffu) << " " << s.spanMaxX << std::endl;
             // }
-            numSplits += MergeSpans(spans, flatLines, indices, drawSpans, i, atlasManager);
+            MergeSpans(spans, flatLines, indices, drawSpans, i, atlasManager);
             RenderToAtlas(drawSpans, indices, flatLinePoints, atlas);
             Render(drawSpans, indices, flatLinePoints, image, colors[i], atlas);
             // break;
