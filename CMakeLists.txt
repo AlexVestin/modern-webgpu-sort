@@ -42,6 +42,7 @@ set(VECTOR_SOURCES
   "vector/path/VPath.cpp"
   "vector/path/VPoint.cpp"
   "vector/vector.cpp"
+  "vector/Validation.cpp"
 )
 
 MESSAGE("${CMAKE_CXX_FLAGS}")
