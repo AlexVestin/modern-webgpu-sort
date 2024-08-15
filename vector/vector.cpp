@@ -97,7 +97,7 @@ struct AtlasManager {
     const uint32_t atlasHeight;
 };
 
-void MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& flatLines, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
+void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
     auto EmitSpan = [&indices, &pathId, &drawSpans, &atlasManager, &spans](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
         DrawSpan ds;
         ds.lineStartIndex = indices.size();
@@ -117,24 +117,26 @@ void MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& 
             uint2 atlasPosition;
             atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
             ds.atlasPosition = (atlasPosition.y << 16u) | atlasPosition.x;   
-        } else if(spanLineCount == 0u) {
-            const uint2& edgePosition = atlasManager.GetLastEdgePosition();
-            ds.atlasPosition = (edgePosition.y << 16u) | edgePosition.x;
-        }
+        } 
+        // else if(spanLineCount == 0u) {
+        //     const uint2& edgePosition = atlasManager.GetLastEdgePosition();
+        //     ds.atlasPosition = (edgePosition.y << 16u) | edgePosition.x;
+        // }
 
         drawSpans.push_back(ds);
     };
 
     int32_t backdrop = 0;
-    uint32_t spanId = 0u;
+    uint32_t spanId = spanStartId;
 
-    const Span& span = spans[0];
+    const Span& span = spans[spanId];
     int32_t maxSpanX = span.spanMaxX;
     uint32_t currentSpanY = span.key >> 16u;
     uint32_t currentSpanX = (span.key & 0xffffu);
     uint32_t spanLineCount = (span.lineEndIndex - span.lineStartIndex) + 1u;
     
-    for (int i = 1; i < spans.size(); i++) {
+    for (int i = spanStartId + 1u; i < spans.size(); i++) {
+
         const Span& newSpan = spans[i];
         uint32_t newSpanY  = newSpan.key >> 16u;
         uint32_t newSpanX  = (newSpan.key & 0xffffu);
@@ -184,27 +186,30 @@ void MergeSpans(const std::vector<Span>& spans, const std::vector<FlatCommand>& 
             backdrop--;
         }
     }
+    
     EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX);
 }
 
-std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32_t& hits) {
-    std::vector<Span> spans;
-    spans.reserve(flatLines.size() / 2);
-    
+void TraverseGrid(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
     VPoint last;
+    
+    // Counters
     uint32_t lastTileY = ~0u;
     uint32_t lastTileX = ~0u;
-    uint32_t startIndex = 0u;
     uint32_t spanEntryDirection = ~0u;
-    uint32_t contourId = 0u;
+
+    // Ids
+    uint32_t startLineIndex = flatVerbs.size();
+    uint32_t contourId = spans.size();
+    
     float spanMaxX = 0u;
 
-    for (int i = 0; i <= flatLines.size(); i++) {
-        // std::cout << "i: " << i << " flags: " << (i != flatLines.size()) << " " << static_cast<uint32_t>(flatLines[i].verb) << std::endl;
-        if (i < flatLines.size() && flatLines[i].verb == VPathVerb::kLine) {
-            const auto& line = flatLines[i];
+    uint32_t spanStartSize = spans.size();
+
+    for (int i = workStartIndex; i <= flatVerbs.size(); i++) {
+        if (i < flatVerbs.size() && flatVerbs[i] == VPathVerb::kLine) {
             const VPoint& p0 = last;
-            const VPoint& p1 = line.point;
+            const VPoint& p1 = flatPoints[i];
 
             if (p0 == p1) {
                 continue;
@@ -231,19 +236,14 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
                 float yv1 = std::clamp(static_cast<float>(yc + TILE_SIZE), miny, maxy);
                 float xv1 = p0.x + (yv1 - p0.y) * slope;
 
-
-                // std::cout << "Line: " << i << " " << p0 << p1 << " " << xv0 << " " << xv1 << " " << min << std::endl;
-
                 float px = std::min(xv0, xv1);
-                if (i > 0 && lastTileY != yc) {
+                if (i > workStartIndex && lastTileY != yc) {
                     // Commit on entering new span
                     Span span;
                     span.key = (lastTileY  << 16u) | (lastTileX & 0xffffu);
-                    span.lineStartIndex = startIndex;
+                    span.lineStartIndex = startLineIndex;
                     span.lineEndIndex = i;
                     span.spanMaxX = spanMaxX;
-
-                    hits += (i - startIndex) + 1u;
 
                     uint32_t type = p0.y > p1.y ? DIRECTION_UP : DIRECTION_DOWN; // 2 = down
                     if (type == spanEntryDirection || spanEntryDirection == ~0u) {
@@ -256,7 +256,7 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
 
                     // Update counters
                     lastTileX = -1000000;
-                    startIndex = i;                    
+                    startLineIndex = i;                    
                     spanEntryDirection = type;
                     spanMaxX = -10000;
                 }
@@ -267,20 +267,17 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
                 lastTileY = yc;
             }
         } else {
-            if (i > 0) {
+            if (i > workStartIndex) {
                 // Commit close
                 Span span;
                 span.key = (lastTileY << 16u) | (lastTileX & 0xffffu);
-                span.lineStartIndex = startIndex;
+                span.lineStartIndex = startLineIndex;
                 span.lineEndIndex = i - 1;
                 span.spanMaxX = spanMaxX;
                 span.type = 0;
 
-                hits += (i - startIndex);
-
                 // if we didn't exit the current span we dont need to update 
-                if (contourId < spans.size()) {
-                    assert(contourId < spans.size());
+                if (contourId < spanStartSize) {
                     uint32_t contourType = spans[contourId].type;
                                         
                     if ((contourType == 0 && (spanEntryDirection == 0u || spanEntryDirection == ~0u)) || (contourType != spanEntryDirection)) {
@@ -294,26 +291,25 @@ std::vector<Span> TraverseGrid(const std::vector<FlatCommand>& flatLines, uint32
             }
 
             // Update counters
-            if (i < flatLines.size()) {
-                startIndex = i + 1;
+            if (i < flatVerbs.size()) {
+                startLineIndex = i + 1;
 
-                lastTileY = static_cast<int32_t>(flatLines[i].point.y * TILE_SIZE_DIV) * TILE_SIZE;
+                const auto& p = flatPoints[i];
+                lastTileY = static_cast<int32_t>(p.y * TILE_SIZE_DIV) * TILE_SIZE;
                 spanEntryDirection = ~0u;
                 
-                spanMaxX = flatLines[i].point.x;
+                spanMaxX = p.x;
                 lastTileX = static_cast<uint32_t>(spanMaxX);
                 
                 // Next span is the start of the contour
                 contourId = spans.size();
             } else {
-                return spans;
+                return;
             }
         }
 
-        last = flatLines[i].point;
+        last = flatPoints[i];
     }
-
-    return spans;
 }
 
 
@@ -337,62 +333,65 @@ int main() {
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
 
     std::chrono::high_resolution_clock::time_point h_start, h_end;
-    for (int j = 0; j < 1000; j++) {
-        // std::vector<VPathVerb> flatVerbs;
-        // std::vector<VPoint> flatPoints;   
-        // // flatPoints.reserve(1 << 20);
-        // // flatVerbs.reserve(1 << 20);
+    std::vector<uint32_t> colors(elements.size());
 
-        std::vector<uint32_t> colors(elements.size());
+    for (int j = 0; j < 1; j++) {
+        std::vector<VPathVerb> flatVerbs;
+        std::vector<VPoint> flatPoints;   
+        std::vector<Span> spans;
+        std::vector<uint32_t> indices;
+        std::vector<DrawSpan> drawSpans;
+
+        flatPoints.reserve(1 << 20);
+        flatVerbs.reserve(1 << 20);
+        spans.reserve(1 << 19);
+        drawSpans.reserve(1 << 19);
+        indices.reserve(1 << 20);
+
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
 
         h_start = std::chrono::high_resolution_clock::now();
         
         for (int i = 0; i < elements.size(); i++) {
-            // std::vector<uint32_t> indices;
-            // std::vector<DrawSpan> drawSpans;
-            // std::vector<VPoint> flatLinePoints;
-            // indices.reserve(1 << 20);
-            // drawSpans.reserve(1 << 20);
 
-
+            if(i != 0u && i < 2000) {
+                continue;
+            }
             const auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
             const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
 
+            uint32_t flatStartIndex = flatVerbs.size();
+            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.2f);
+ 
+            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+                    el.paint.GetFillColor().GetU8ABGR();
+            
+            uint32_t spanStartIndex = spans.size();
+            TraverseGrid(flatStartIndex, flatVerbs, flatPoints, spans);
+            std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+                return s0.key < s1.key;
+            });
 
-            // FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.10f);
-            auto flatLines = FlattenCommands(verbs, points, 0.10f);
-
-            // flatLinePoints.reserve(flatLines.size());
-            // for (auto& fl: flatLines) {
-            //     flatLinePoints.push_back(fl.point);
-            // }
-            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-            //         el.paint.GetFillColor().GetU8ABGR();
-            // uint32_t hits = 0u;
-            // std::vector<Span> spans = TraverseGrid(flatLines, hits);
-            // std::sort(spans.begin(), spans.end(), [](const Span& s0, const Span& s1) {
-            //     return s0.key < s1.key;
-            // });
-            // MergeSpans(spans, flatLines, indices, drawSpans, i, atlasManager);
-            // RenderToAtlas(drawSpans, indices, flatLinePoints, atlas);
-            // Render(drawSpans, indices, flatLinePoints, image, colors[i], atlas);
+            uint32_t drawSpansStartIndex = drawSpans.size();
+            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
+            Render(drawSpansStartIndex, drawSpans, indices, flatPoints, image, colors, atlas);
         }
 
-
-        // uint32_t channels = 4u;
-        // uint32_t bpr = IMAGE_WIDTH * channels;
-        // stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
-        // for (int i = 0; i < atlas.size(); i++) {
-        //     float area = atlas[i];
-        //     float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
-        //     outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
-        // }
-        // channels = 1u;
-        // bpr = IMAGE_WIDTH * channels;
-        // stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);
+        // RenderToAtlas(drawSpans, indices, flatPoints, atlas);
+        
+        uint32_t channels = 4u;
+        uint32_t bpr = IMAGE_WIDTH * channels;
+        stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
+        for (int i = 0; i < atlas.size(); i++) {
+            float area = atlas[i];
+            float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
+            outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
+        }
+        channels = 1u;
+        bpr = IMAGE_WIDTH * channels;
+        stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);
         
 
         h_end = std::chrono::high_resolution_clock::now();

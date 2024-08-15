@@ -282,9 +282,14 @@ void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_
 }
 
 
-void Render(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT>& image, uint32_t col, const std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT>& atlas) {
-    float4 color = unpack(col);
-    for (auto& span: spans) {
+void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT>& image, const std::vector<uint32_t>& colors, const std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT>& atlas) {
+    
+    for (int i = start; i < spans.size(); i++) {
+        const DrawSpan& span = spans[i]; 
+        uint32_t pathId = span.pathId & 0xffffu;
+        std::cout << pathId << std::endl;
+        float4 color = unpack(colors[pathId]);
+        
         uint32_t mx = span.pathId >> 16u;
         uint32_t pid = span.pathId & 0xffffu;
         uint32_t tl_x = span.position & 0xffffu;
@@ -312,10 +317,7 @@ void Render(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& ind
                 if (count > linesPerSpan) {
                     uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x + cx;
                     area += atlas[atlasIndex];
-                } else if(count == 0) {
-                    uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x;
-                    area += atlas[atlasIndex];
-                }
+                } 
 
                 for (int i = 0; i < std::min(count, linesPerSpan); i++) {
                     uint32_t lineIndex = indices[span.lineStartIndex + i];

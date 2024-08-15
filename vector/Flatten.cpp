@@ -175,11 +175,6 @@ std::vector<FlatCommand> FlattenCommands(const std::vector<VPathVerb>& verbs, co
                 const VPoint& control2 = points[i + 1];
                 const VPoint& point = points[i + 2];
 
-                // if (!control1.isCorrect() || !control2.isCorrect() || !point.isCorrect()) {
-                //     std::cerr << "Incorrect line or point" << std::endl;
-                //     return {};
-                // }
-
                 VPoint a = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
                 VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
                 float conc = std::max(b.Length(), (a + b).Length());
@@ -230,7 +225,6 @@ void FlattenCommands2(
     VPoint first{0, 0};
 
     size_t i = 0;
-    const float TOO_LONG_LINE = 100000.f;
     const float tolerance4  = tolerance * 4.0f;
     const float sqrt_of_8 = 2.82842712475f;
     
@@ -283,11 +277,6 @@ void FlattenCommands2(
                 const VPoint& control1 = points[i];
                 const VPoint& control2 = points[i + 1];
                 const VPoint& point = points[i + 2];
-
-                // if (!control1.isCorrect() || !control2.isCorrect() || !point.isCorrect()) {
-                //     std::cerr << "Incorrect line or point" << std::endl;
-                //     return {};
-                // }
 
                 VPoint a = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
                 VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
