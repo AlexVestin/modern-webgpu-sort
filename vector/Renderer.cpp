@@ -148,7 +148,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
     utils::ComboRenderPassDescriptor atlasPassDescriptor({atlasTextureView});
-    atlasPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Load;
+    atlasPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
     atlasPassDescriptor.cColorAttachments[0].storeOp = wgpu::StoreOp::Store;
     wgpu::RenderPassEncoder atlasPass = encoder.BeginRenderPass(&atlasPassDescriptor);
     atlasPass.SetBindGroup(0, bindGroup);
@@ -157,6 +157,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     atlasPass.End();
 
     utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
+    drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
     wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
     drawPass.SetBindGroup(0, bindGroup);
     drawPass.SetBindGroup(1, atlasBindGroup);
@@ -167,7 +168,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
 
-    utils::BusyWaitDevice(device);
+    // utils::BusyWaitDevice(device);
 
     // WriteAtlasTexture();
     // WriteColorTexture();
