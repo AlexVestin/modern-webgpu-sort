@@ -29,6 +29,7 @@ public:
     void Render(uint32_t atlasIndices, uint32_t drawSpans) const;
 
     void WriteAtlasTexture() const;
+    void WriteColorTexture() const;
 
     void CreateBindGroup();
 
@@ -68,13 +69,22 @@ private:
 
     bool needsRecreateBindGroup = true;
 
-    wgpu::RenderPipeline pipeline;
+    wgpu::RenderPipeline atlasPipeline;
+    wgpu::RenderPipeline drawPipeline;
 
     wgpu::Texture atlasTexture;
     wgpu::TextureView atlasTextureView;
 
+
+    wgpu::Texture drawTexture;
+    wgpu::TextureView drawTextureView;
+
     wgpu::BindGroup bindGroup;
+    wgpu::BindGroup atlasBindGroup;
+    wgpu::Sampler atlasSampler;
+
     wgpu::BindGroupLayout drawBindGroupLayout;
+    wgpu::BindGroupLayout atlasBindGroupLayout;
 
     uint32_t atlasWidth;
     uint32_t atlasHeight;

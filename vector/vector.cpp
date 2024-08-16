@@ -320,7 +320,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("paper-1.svg");
+    std::ifstream t("ghost.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -338,7 +338,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 1000;
+    uint32_t iterations = 2000;
 
 
     uint32_t flatPointsAllocation = 1 << 20;

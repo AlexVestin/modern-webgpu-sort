@@ -186,15 +186,12 @@ fn frag_main(
 
     var a = 0.0;
     let xy = dist0.xy - vec2f(0.5);
-
-
     for (var i = 0u; i < 8u; i++) {
         let index = line_indices[info.x + i];
         let p0 = points[index - 1u];
         let p1 = points[index];
         a += area(p0, p1, xy) * f32(info.x + i < info.y);
     }
-    
 
     return vec4f(a);
 }

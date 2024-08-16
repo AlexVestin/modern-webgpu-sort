@@ -45,18 +45,27 @@ std::string ReadTextFile(const std::string& path) {
 
 Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasWidth}, atlasHeight{atlasHeight} {
     InitDevice();
-    
+
+    auto doubleStage = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
     drawBindGroupLayout = utils::MakeBindGroupLayout(device, "DrawBindGroupLayout", {
-        {0, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        {1, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        {2, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        {3, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
-        {4, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
+        {0, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
+        {1, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
+        {2, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
+        {3, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
+        {4, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
+    });
+
+    atlasBindGroupLayout = utils::MakeBindGroupLayout(device, "AtlasBindGroupLayout", {
+        {0, wgpu::ShaderStage::Fragment, wgpu::TextureSampleType::UnfilterableFloat},
+        {1, wgpu::ShaderStage::Fragment, wgpu::SamplerBindingType::NonFiltering}
     });
 
     // Create atlas texture
     atlasTexture = CreateTexture(atlasFormat);
     atlasTextureView = atlasTexture.CreateView();
+
+    drawTexture = CreateTexture(wgpu::TextureFormat::RGBA8Unorm);
+    drawTextureView = drawTexture.CreateView();
 
     // Create empty buffers
     pathInfoBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "ColorBuffer");
@@ -68,15 +77,32 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
     textureDataBuffer = utils::CreateBuffer(device, IMAGE_WIDTH * IMAGE_HEIGHT * sizeof(float), copySrcUsage, "CopyTextureBuffer");
 
     std::string atlasShader = ReadTextFile("vector/shaders/atlas.wgsl");
-    wgpu::ShaderModule shaderModule = utils::CreateShaderModule(device, atlasShader.c_str(), "AtlasShader");
-    pipeline = CreateRenderPipeline(device,
-                                    {.vertModule = shaderModule,
-                                    .fragModule = shaderModule,
+    wgpu::ShaderModule atlasShaderModule = utils::CreateShaderModule(device, atlasShader.c_str(), "AtlasShader");
+    atlasPipeline = CreateRenderPipeline(device,
+                                    {.vertModule = atlasShaderModule,
+                                    .fragModule = atlasShaderModule,
                                     .targetFormat = atlasFormat,
                                     .blendState = &lyra::blend::Additive,
                                     .bindGroupLayouts = {drawBindGroupLayout}},
                                     "AtlasPipeline");
-    }
+
+    
+    wgpu::SamplerDescriptor samplerDescriptor;
+    samplerDescriptor.minFilter = wgpu::FilterMode::Nearest;
+    samplerDescriptor.magFilter = wgpu::FilterMode::Nearest;
+    atlasSampler = device.CreateSampler(&samplerDescriptor);
+
+
+    std::string drawShader = ReadTextFile("vector/shaders/draw.wgsl");
+    wgpu::ShaderModule drawShaderModule = utils::CreateShaderModule(device, drawShader.c_str(), "DrawShader");
+    drawPipeline = CreateRenderPipeline(device,
+                                    {.vertModule = drawShaderModule,
+                                    .fragModule = drawShaderModule,
+                                    .targetFormat = wgpu::TextureFormat::RGBA8Unorm,
+                                    .blendState = &lyra::blend::OneMinusSrcAlpha,
+                                    .bindGroupLayouts = {drawBindGroupLayout, atlasBindGroupLayout}},
+                                    "DrawPipeline");
+}
 
 void Renderer::InitDevice() {
     dawnProcSetProcs(&dawn::native::GetProcs());
@@ -126,14 +152,35 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     atlasPassDescriptor.cColorAttachments[0].storeOp = wgpu::StoreOp::Store;
     wgpu::RenderPassEncoder atlasPass = encoder.BeginRenderPass(&atlasPassDescriptor);
     atlasPass.SetBindGroup(0, bindGroup);
-    atlasPass.SetPipeline(pipeline);
+    atlasPass.SetPipeline(atlasPipeline);
     atlasPass.Draw(atlasIndices * 6u);
     atlasPass.End();
+
+    utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
+    wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
+    drawPass.SetBindGroup(0, bindGroup);
+    drawPass.SetBindGroup(1, atlasBindGroup);
+    drawPass.SetPipeline(drawPipeline);
+    drawPass.Draw(drawSpans * 6u);
+    drawPass.End();
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
 
+    utils::BusyWaitDevice(device);
+
     // WriteAtlasTexture();
+    // WriteColorTexture();
+}
+
+void Renderer::WriteColorTexture() const {
+    uint32_t width = 1920;
+    uint32_t height = 1080;
+    wgpu::Buffer buf = ReadBackTexture(device, drawTexture, width, height, 4);
+    const uint8_t* data = static_cast<const uint8_t*>(buf.GetConstMappedRange());
+    uint32_t bpr = width * 4u;
+    stbi_write_png("color.png", width, height, 4, static_cast<const void*>(data), bpr);
+    buf.Destroy();
 }
 
 void Renderer::WriteAtlasTexture() const {
@@ -159,6 +206,11 @@ void Renderer::CreateBindGroup() {
         {2, flatLinePointBuffer},
         {3, drawSpansBuffer},
         {4, atlasIndicesBuffer}
+    });
+
+    atlasBindGroup = utils::MakeBindGroup(device, atlasBindGroupLayout, {
+        {0, atlasTextureView},
+        {1, atlasSampler},
     });
 }
 
