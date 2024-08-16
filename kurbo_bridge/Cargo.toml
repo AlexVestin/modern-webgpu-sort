@@ -1,0 +1,11 @@
+[package]
+name = "kurbo_bridge"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "kurbo_bridge"
+crate-type = ["staticlib"]
+
+[dependencies]
+kurbo = { git = "https://github.com/linebender/kurbo" }

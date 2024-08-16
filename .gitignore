@@ -18,3 +18,6 @@ main
 cargo/
 corrosion/
 libkurbo_bridge.a
+
+kurbo_bridge/target
+kurbo_bridge/pkg
