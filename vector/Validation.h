@@ -16,10 +16,11 @@
 #include "../ComputeUtil.h"
 #include "defs.h"
 
-void RenderToAtlas(
+void RenderToAtlas2(
     const std::vector<DrawSpan>& spans, 
     const std::vector<uint32_t>& indices, 
-    const std::vector<VPoint>& flatLinePoints);
+    const std::vector<VPoint>& flatLinePoints,
+    const std::vector<uint32_t>& atlasIndices);
 
 void Render(
     uint32_t start,

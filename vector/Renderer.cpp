@@ -8,6 +8,7 @@
 
 #include "defs.h"
 
+#pragma GCC diagnostic push
 #define STB_IMAGE_IMPLEMENTATION
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "stb_image_write.h"
@@ -122,6 +123,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
 
     utils::ComboRenderPassDescriptor atlasPassDescriptor({atlasTextureView});
     atlasPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Load;
+    atlasPassDescriptor.cColorAttachments[0].storeOp = wgpu::StoreOp::Store;
     wgpu::RenderPassEncoder atlasPass = encoder.BeginRenderPass(&atlasPassDescriptor);
     atlasPass.SetBindGroup(0, bindGroup);
     atlasPass.SetPipeline(pipeline);
@@ -131,7 +133,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
 
-    WriteAtlasTexture();
+    // WriteAtlasTexture();
 }
 
 void Renderer::WriteAtlasTexture() const {
@@ -142,8 +144,8 @@ void Renderer::WriteAtlasTexture() const {
 
     for (int i = 0; i < width * height; i++) {
         float area = data[i];
-        // float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
-        outAtlas[i] = static_cast<uint8_t>(std::clamp(area, 0.0f, 1.0f) * 255.0f); 
+        float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
+        outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
     }
     uint32_t bpr = width;
     stbi_write_png("written.png", width, height, 1, static_cast<const void*>(outAtlas.data()), bpr);

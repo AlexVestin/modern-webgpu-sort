@@ -42,4 +42,17 @@ namespace lyra::blend {
             .dstFactor = wgpu::BlendFactor::Zero
         }
     };
+
+      const wgpu::BlendState Zero = {
+        .color = {
+            .operation = wgpu::BlendOperation::Add,
+            .srcFactor = wgpu::BlendFactor::Zero,
+            .dstFactor = wgpu::BlendFactor::Zero
+        },
+        .alpha = {
+            .operation = wgpu::BlendOperation::Add,
+            .srcFactor = wgpu::BlendFactor::Zero,
+            .dstFactor = wgpu::BlendFactor::Zero
+        }
+    };
 }

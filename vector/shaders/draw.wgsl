@@ -75,6 +75,9 @@ fn area(p0: vec2f, p1: vec2f, xy: vec2f) -> f32 {
 @group(0) @binding(3) var<storage, read> draw_spans: array<DrawSpan>;
 @group(0) @binding(4) var<storage, read> atlas_indices: array<u32>;
 
+@group(1) @binding(0) var atlas_texture: texture_2d<f32>;
+@group(1) @binding(1) var atlas_sampler : sampler;
+
 
 @vertex
 fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
@@ -107,7 +110,7 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
 
     // -----Read lines -----
     let offset = ((span_info >> 24u) + 1u) * LINES_PER_QUAD;     
-    var start_index = draw_span.line_start_index + offset;
+    var start_index = draw_span.line_start_index;
 
     // Loop 1
     // for (var i = 0u; i < 4u; i++) {
@@ -195,6 +198,5 @@ fn frag_main(
         a += area(p0, p1, xy) * f32(info.x + i < info.y);
     }
     
-
     return vec4f(a);
 }

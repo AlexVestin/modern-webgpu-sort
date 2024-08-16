@@ -255,11 +255,12 @@ float Area(const VPoint& p0, const VPoint& p1, const VPoint& xy) {
     return 0.0f;
 }
 
-void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints) {
-    for (auto& span: spans) {
-        if (span.lineEndIndex - span.lineStartIndex <= linesPerQuad) {
-            continue;
-        }
+void RenderToAtlas2(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, const std::vector<uint32_t>& atlasIndices) {
+
+    for (auto& atlasIndex: atlasIndices) {
+        uint32_t it = atlasIndex >> 24u;
+        uint32_t spanIndex = atlasIndex & 0xffffffu;
+        const auto& span = spans[spanIndex];
         
         uint32_t mx = span.pathId >> 16u;
         
@@ -271,6 +272,11 @@ void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_
 
         uint32_t width = mx - tl_x;
 
+
+        uint32_t offset = (it + 1u) * linesPerQuad;
+        uint32_t startIndex = span.lineStartIndex + offset;
+        uint32_t endIndex = std::min(startIndex + linesPerQuad, span.lineEndIndex);
+
         for (int y = 0; y < TILE_SIZE; y++) {
             if (y + atlasY >= IMAGE_HEIGHT) {
                 break;
@@ -281,15 +287,13 @@ void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_
                 }
                 float area = 0.0f;
                 uint32_t pixelIndex = (atlasY + y) * IMAGE_WIDTH + (atlasX + x);
-                for (int i = span.lineStartIndex + linesPerQuad; i < span.lineEndIndex; i++) {
+                for (int i = startIndex; i < endIndex; i++) {
                     uint32_t index = indices[i];
                     const VPoint& p0 = flatLinePoints[index - 1u];
                     const VPoint& p1 = flatLinePoints[index];
                     area += Area(p0, p1, VPoint::Make(tl_x + x, tl_y + y));
                 }
 
-                // float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
-                // image[pixelIndex] = static_cast<uint8_t>(a * 255.0f);                
                 atlas[pixelIndex] = area;
             }        
         }

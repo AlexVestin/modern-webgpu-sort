@@ -338,7 +338,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 1;
+    uint32_t iterations = 1000;
 
 
     uint32_t flatPointsAllocation = 1 << 20;
@@ -409,9 +409,7 @@ int main() {
             over += MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
         }
 
-        // RenderToAtlas(drawSpans, indices, flatPoints);
-        // Render(0, drawSpans, indices, flatPoints, colors);
-        // WriteImages();
+      
 
         atlasIndices.reserve(over);
         uint32_t index = 0;
@@ -419,12 +417,16 @@ int main() {
             const auto& span = drawSpans[j];
             uint32_t lineCount = span.lineEndIndex - span.lineStartIndex;
             if (lineCount > linesPerQuad) {
-                uint32_t lim = (lineCount + (linesPerQuad - 1u)) / linesPerQuad;
+                uint32_t lim = ComputeUtil::div_up(lineCount, linesPerQuad) - 1u;
                 for (int i = 0; i < lim; i++) {
                     atlasIndices.push_back((j | (i << 24u)));
                 }
             }
         }
+
+        // RenderToAtlas2(drawSpans, indices, flatPoints, atlasIndices);
+        // Render(0, drawSpans, indices, flatPoints, colors);
+        // WriteImages();
 
         renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
         renderer.Render(atlasIndices.size(), drawSpans.size());
