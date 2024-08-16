@@ -275,7 +275,6 @@ void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_
             if (y + atlasY >= IMAGE_HEIGHT) {
                 break;
             }
-            assert(index > 0);
             for (int x = 0; x < width; x++) {
                 if (x + atlasX >= IMAGE_WIDTH) {
                     break;
@@ -320,7 +319,6 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
             if (y >= IMAGE_HEIGHT) {
                 break;
             }
-            assert(index > 0);
             for (int cx = 0; cx < width; cx++) {
                 uint32_t x = tl_x + cx;
                 if (x >= IMAGE_WIDTH) {

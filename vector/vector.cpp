@@ -11,13 +11,12 @@
 
 #include "defs.h"
 #include "Validation.h"
+#include "Renderer.h"
 
 #include "Flatten.h"
 #include "path/SVGUtil.h"
 
-#include "../wgpu/NativeUtils.h"
-#include "../ComputeUtil.h"
-
+Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
 
 struct AtlasManager {
     AtlasManager(uint32_t width, uint32_t height) : atlasWidth{width}, atlasHeight{height} { }
@@ -104,7 +103,7 @@ uint32_t MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::v
             uint2 atlasPosition;
             atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
             ds.atlasPosition = (atlasPosition.y << 16u) | atlasPosition.x;   
-            over++;
+            over += ((spanLineCount + (linesPerQuad - 1u)) / linesPerQuad) * linesPerQuad;
         } 
         // else if(spanLineCount == 0u) {
         //     const uint2& edgePosition = atlasManager.GetLastEdgePosition();
@@ -321,7 +320,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("mario.svg");
+    std::ifstream t("ghost.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -347,20 +346,23 @@ int main() {
     uint32_t drawSpansAllocation = 1 << 19;
     uint32_t indicesAllocation = 1 << 19;
 
+    // CPU Local 
     std::vector<VPathVerb> flatVerbs;
-    std::vector<VPoint> flatPoints;   
     std::vector<Span> spans;
+
+    // GPU buffers
+    std::vector<VPoint> flatPoints;
     std::vector<uint32_t> indices;
     std::vector<DrawSpan> drawSpans;
     std::vector<uint32_t> atlasIndices;
 
-  
     for (int j = 0; j < iterations; j++) {
         flatPoints.clear();
         flatVerbs.clear();
         spans.clear();
         drawSpans.clear();
         indices.clear();
+        atlasIndices.clear();
 
         if (flatPointsAllocation > flatPoints.capacity()) {
             flatPoints.reserve(flatPointsAllocation);
@@ -404,14 +406,16 @@ int main() {
             });
 
             uint32_t drawSpansStartIndex = drawSpans.size();
-            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
+            over += MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
         }
+
+
         
         // RenderToAtlas(drawSpans, indices, flatPoints);
         // Render(0, drawSpans, indices, flatPoints, colors);
         // WriteImages();
 
-        atlasIndices.resize(over);
+        atlasIndices.reserve(over);
         uint32_t index = 0;
         for (int j = 0; j < drawSpans.size(); j++) {
             const auto& span = drawSpans[j];
@@ -419,16 +423,20 @@ int main() {
             if (lineCount > linesPerQuad) {
                 uint32_t lim = (lineCount + (linesPerQuad - 1u)) / linesPerQuad;
                 for (int i = 0; i < lim; i++) {
-                    atlasIndices[index++] = (j | (i << 24u));
+                    atlasIndices.push_back((j | (i << 24u)));
                 }
             }
         }
+
+        renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
         avgTime += ms_double.count();
     }
+
+    renderer.Dispose();
 
     std::cout << "avgTime: " << avgTime / iterations << std::endl;
     return 0;
