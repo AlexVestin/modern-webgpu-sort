@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <fstream>
+#include <sstream>
 
 #include "Renderer.h"
 
@@ -81,8 +82,8 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
     atlasPipeline = CreateRenderPipeline(device,
                                     {.vertModule = atlasShaderModule,
                                     .fragModule = atlasShaderModule,
-                                    .targetFormat = atlasFormat,
                                     .blendState = &lyra::blend::Additive,
+                                    .targetFormat = atlasFormat,
                                     .bindGroupLayouts = {drawBindGroupLayout}},
                                     "AtlasPipeline");
 
@@ -98,10 +99,11 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
     drawPipeline = CreateRenderPipeline(device,
                                     {.vertModule = drawShaderModule,
                                     .fragModule = drawShaderModule,
-                                    .targetFormat = wgpu::TextureFormat::RGBA8Unorm,
                                     .blendState = &lyra::blend::OneMinusSrcAlpha,
+                                    .targetFormat = wgpu::TextureFormat::RGBA8Unorm,
                                     .bindGroupLayouts = {drawBindGroupLayout, atlasBindGroupLayout}},
                                     "DrawPipeline");
+
 }
 
 void Renderer::InitDevice() {
@@ -171,7 +173,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     // utils::BusyWaitDevice(device);
 
     // WriteAtlasTexture();
-    // WriteColorTexture();
+    WriteColorTexture();
 }
 
 void Renderer::WriteColorTexture() const {

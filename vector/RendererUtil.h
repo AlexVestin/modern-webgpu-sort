@@ -85,7 +85,7 @@ struct RenderPipelineCreationOptions {
     std::vector<wgpu::ConstantEntry> constants = {};
     wgpu::ColorWriteMask targetColorWriteMask = wgpu::ColorWriteMask::All;
     std::vector<VertexBufferLayout> vertexBufferLayouts = {};
-    const std::vector<const wgpu::BindGroupLayout> bindGroupLayouts = {};
+    const std::vector<wgpu::BindGroupLayout> bindGroupLayouts;
     const wgpu::ChainedStruct* nextInChain = nullptr;
 };
 

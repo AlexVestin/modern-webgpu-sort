@@ -2,6 +2,7 @@
 
 #include <limits>
 #include <vector>
+#include <array>
 #include "VPoint.h"
 
 namespace lyra {

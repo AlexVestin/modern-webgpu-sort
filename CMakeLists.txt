@@ -50,7 +50,7 @@ set(VECTOR_SOURCES
 MESSAGE("${CMAKE_CXX_FLAGS}")
 
 
-corrosion_import_crate(MANIFEST_PATH dependencies/kurbo_bridge/Cargo.toml)
+corrosion_import_crate(MANIFEST_PATH kurbo_bridge/Cargo.toml)
 add_executable(${PROJECT_NAME} ${VECTOR_SOURCES})
 
 set(TINT_BUILD_DOCS OFF CACHE BOOL "Enable building tint docs." FORCE)

@@ -338,7 +338,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 10000;
+    uint32_t iterations = 1;
 
 
     uint32_t flatPointsAllocation = 1 << 20;
@@ -394,7 +394,7 @@ int main() {
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
 
             uint32_t flatStartIndex = flatVerbs.size();
-            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.2f);
+            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f);
  
             colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
                     el.paint.GetFillColor().GetU8ABGR();
@@ -433,6 +433,8 @@ int main() {
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
         avgTime += ms_double.count();
+
+        std::cout << colors.size() << " " << flatPoints.size() << " " << drawSpans.size() << " " << indices.size() << " " << atlasIndices.size() << std::endl;
     }
 
     renderer.Dispose();
