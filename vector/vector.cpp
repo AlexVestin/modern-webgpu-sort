@@ -9,18 +9,6 @@
 #include <deque>
 #include <list>
 
-#pragma GCC diagnostic push 
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#include "stb_image.h"
-#pragma GCC diagnostic pop
-
-
 #include "defs.h"
 #include "Validation.h"
 
@@ -80,10 +68,7 @@ struct AtlasManager {
     }
 
     uint32_t UsedSpace() const {
-        // return atlasWidth - counterX + (atlasHeight - counterY) * atlasWidth; 
-
         return (counterY * atlasWidth + counterX * TILE_SIZE);
-        // return t - allocation;
     }
 
     uint32_t counterX = 0;
@@ -97,8 +82,10 @@ struct AtlasManager {
     const uint32_t atlasHeight;
 };
 
-void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
-    auto EmitSpan = [&indices, &pathId, &drawSpans, &atlasManager, &spans](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
+uint32_t MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
+
+    uint32_t over = 0u;
+    auto EmitSpan = [&indices, &pathId, &drawSpans, &atlasManager, &spans, &over](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
         DrawSpan ds;
         ds.lineStartIndex = indices.size();
         for (int j = from; j < to; j++) {
@@ -113,10 +100,11 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
 
         uint32_t spanLineCount = ds.lineEndIndex - ds.lineStartIndex;
         
-        if (spanLineCount > linesPerSpan) {
+        if (spanLineCount > linesPerQuad) {
             uint2 atlasPosition;
             atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
             ds.atlasPosition = (atlasPosition.y << 16u) | atlasPosition.x;   
+            over++;
         } 
         // else if(spanLineCount == 0u) {
         //     const uint2& edgePosition = atlasManager.GetLastEdgePosition();
@@ -189,6 +177,7 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
     }
     
     EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX);
+    return over;
 }
 
 void TraverseGrid(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
@@ -330,14 +319,9 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
     return { e };
 }
 
-
-std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT> image = {};
-std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT> atlas = {};
-std::array<uint8_t, IMAGE_WIDTH * IMAGE_HEIGHT> outAtlas = {};
-
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("paper-1.svg");
+    std::ifstream t("mario.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -354,23 +338,53 @@ int main() {
     std::chrono::high_resolution_clock::time_point h_start, h_end;
     std::vector<uint32_t> colors(elements.size());
 
-    for (int j = 0; j < 1; j++) {
-        std::vector<VPathVerb> flatVerbs;
-        std::vector<VPoint> flatPoints;   
-        std::vector<Span> spans;
-        std::vector<uint32_t> indices;
-        std::vector<DrawSpan> drawSpans;
+    double avgTime = 0.0f;
+    uint32_t iterations = 3000;
 
-        flatPoints.reserve(1 << 20);
-        flatVerbs.reserve(1 << 20);
-        spans.reserve(1 << 19);
-        drawSpans.reserve(1 << 19);
-        indices.reserve(1 << 20);
+
+    uint32_t flatPointsAllocation = 1 << 20;
+    uint32_t spansAllocation = 1 << 19;
+    uint32_t drawSpansAllocation = 1 << 19;
+    uint32_t indicesAllocation = 1 << 19;
+
+    std::vector<VPathVerb> flatVerbs;
+    std::vector<VPoint> flatPoints;   
+    std::vector<Span> spans;
+    std::vector<uint32_t> indices;
+    std::vector<DrawSpan> drawSpans;
+    std::vector<uint32_t> atlasIndices;
+
+  
+    for (int j = 0; j < iterations; j++) {
+        flatPoints.clear();
+        flatVerbs.clear();
+        spans.clear();
+        drawSpans.clear();
+        indices.clear();
+
+        if (flatPointsAllocation > flatPoints.capacity()) {
+            flatPoints.reserve(flatPointsAllocation);
+            flatVerbs.reserve(flatPointsAllocation);
+        }
+        
+        if (spansAllocation > spans.capacity()) {
+            spans.reserve(spansAllocation);
+        }
+        
+        if (drawSpansAllocation > drawSpans.capacity()) {
+            drawSpans.reserve(drawSpansAllocation);
+        }
+
+        if (indicesAllocation > indices.capacity()) {
+            indices.reserve(indicesAllocation);
+        }
+    
 
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
 
         h_start = std::chrono::high_resolution_clock::now();
         
+        uint32_t over = 0;
         for (int i = 0; i < elements.size(); i++) {
             const auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
@@ -391,28 +405,31 @@ int main() {
 
             uint32_t drawSpansStartIndex = drawSpans.size();
             MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
-            Render(drawSpansStartIndex, drawSpans, indices, flatPoints, image, colors, atlas);
         }
+        
+        // RenderToAtlas(drawSpans, indices, flatPoints);
+        // Render(0, drawSpans, indices, flatPoints, colors);
+        // WriteImages();
 
-        // RenderToAtlas(drawSpans, indices, flatPoints, atlas);
-        
-        uint32_t channels = 4u;
-        uint32_t bpr = IMAGE_WIDTH * channels;
-        stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
-        for (int i = 0; i < atlas.size(); i++) {
-            float area = atlas[i];
-            float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
-            outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
+        atlasIndices.resize(over);
+        uint32_t index = 0;
+        for (int j = 0; j < drawSpans.size(); j++) {
+            const auto& span = drawSpans[j];
+            uint32_t lineCount = span.lineEndIndex - span.lineStartIndex;
+            if (lineCount > linesPerQuad) {
+                uint32_t lim = (lineCount + (linesPerQuad - 1u)) / linesPerQuad;
+                for (int i = 0; i < lim; i++) {
+                    atlasIndices[index++] = (j | (i << 24u));
+                }
+            }
         }
-        channels = 1u;
-        bpr = IMAGE_WIDTH * channels;
-        stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);
-        
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
+        avgTime += ms_double.count();
     }
-    
+
+    std::cout << "avgTime: " << avgTime / iterations << std::endl;
     return 0;
 }

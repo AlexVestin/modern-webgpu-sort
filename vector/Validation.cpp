@@ -1,6 +1,22 @@
 
 #include "Validation.h"
 
+#pragma GCC diagnostic push 
+#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
+#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
+#define STB_IMAGE_IMPLEMENTATION
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+#include "stb_image.h"
+#pragma GCC diagnostic pop
+
+
+static std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT> image = {};
+static std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT> atlas = {};
+static std::array<uint8_t, IMAGE_WIDTH * IMAGE_HEIGHT> outAtlas = {};
+
 // uint32_t area =  ((maxSpanX + 1) - currentSpanX) * TILE_SIZE;
 // std::cout << "-ms: " << currentSpanY * TILE_SIZE << "x" << currentSpanX << "->" <<  maxSpanX << "(" << area  << ") " << spanLineCount  << std::endl;
 // std::vector<uint32_t> allLines;
@@ -239,9 +255,9 @@ float Area(const VPoint& p0, const VPoint& p1, const VPoint& xy) {
     return 0.0f;
 }
 
-void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT>& image) {
+void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints) {
     for (auto& span: spans) {
-        if (span.lineEndIndex - span.lineStartIndex <= linesPerSpan) {
+        if (span.lineEndIndex - span.lineStartIndex <= linesPerQuad) {
             continue;
         }
         
@@ -266,7 +282,7 @@ void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_
                 }
                 float area = 0.0f;
                 uint32_t pixelIndex = (atlasY + y) * IMAGE_WIDTH + (atlasX + x);
-                for (int i = span.lineStartIndex + linesPerSpan; i < span.lineEndIndex; i++) {
+                for (int i = span.lineStartIndex + linesPerQuad; i < span.lineEndIndex; i++) {
                     uint32_t index = indices[i];
                     const VPoint& p0 = flatLinePoints[index - 1u];
                     const VPoint& p1 = flatLinePoints[index];
@@ -275,14 +291,14 @@ void RenderToAtlas(const std::vector<DrawSpan>& spans, const std::vector<uint32_
 
                 // float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
                 // image[pixelIndex] = static_cast<uint8_t>(a * 255.0f);                
-                image[pixelIndex] = area;
+                atlas[pixelIndex] = area;
             }        
         }
     }
 }
 
 
-void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT>& image, const std::vector<uint32_t>& colors, const std::array<float, IMAGE_WIDTH * IMAGE_HEIGHT>& atlas) {
+void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, const std::vector<uint32_t>& colors) {
     
     for (int i = start; i < spans.size(); i++) {
         const DrawSpan& span = spans[i]; 
@@ -313,12 +329,12 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
                 
                 float area = 0.0f;
                 uint32_t count = span.lineEndIndex - span.lineStartIndex;
-                if (count > linesPerSpan) {
+                if (count > linesPerQuad) {
                     uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x + cx;
                     area += atlas[atlasIndex];
                 } 
 
-                for (int i = 0; i < std::min(count, linesPerSpan); i++) {
+                for (int i = 0; i < std::min(count, linesPerQuad); i++) {
                     uint32_t lineIndex = indices[span.lineStartIndex + i];
                     const VPoint& p0 = flatLinePoints[lineIndex - 1u];
                     const VPoint& p1 = flatLinePoints[lineIndex];
@@ -335,4 +351,18 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
             }        
         }
     }
+}
+
+void WriteImages() {
+    uint32_t channels = 4u;
+    uint32_t bpr = IMAGE_WIDTH * channels;
+    stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
+    for (int i = 0; i < atlas.size(); i++) {
+        float area = atlas[i];
+        float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
+        outAtlas[i] = static_cast<uint8_t>(a * 255.0f); 
+    }
+    channels = 1u;
+    bpr = IMAGE_WIDTH * channels;
+    stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);       
 }
