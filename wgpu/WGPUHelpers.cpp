@@ -313,4 +313,106 @@ ColorSpaceConversionInfo GetYUVBT709ToRGBSRGBColorSpaceConversionInfo() {
     return info;
 }
 
+// Extra---
+ComboRenderPassDescriptor::ComboRenderPassDescriptor(const std::vector<wgpu::TextureView>& colorAttachmentInfo,
+                                                     wgpu::TextureView depthStencil) {
+    for (uint32_t i = 0; i < dawn::kMaxColorAttachments; ++i) {
+        cColorAttachments[i].loadOp = wgpu::LoadOp::Clear;
+        cColorAttachments[i].storeOp = wgpu::StoreOp::Store;
+        cColorAttachments[i].clearValue = {0.0f, 0.0f, 0.0f, 0.0f};
+    }
+
+    cDepthStencilAttachmentInfo.depthClearValue = 1.0f;
+    cDepthStencilAttachmentInfo.stencilClearValue = 0;
+    cDepthStencilAttachmentInfo.depthLoadOp = wgpu::LoadOp::Clear;
+    cDepthStencilAttachmentInfo.depthStoreOp = wgpu::StoreOp::Store;
+    cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Clear;
+    cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Store;
+
+    colorAttachmentCount = colorAttachmentInfo.size();
+    uint32_t colorAttachmentIndex = 0;
+    for (const wgpu::TextureView& colorAttachment : colorAttachmentInfo) {
+        if (colorAttachment.Get() != nullptr) {
+            cColorAttachments[colorAttachmentIndex].view = colorAttachment;
+        }
+        ++colorAttachmentIndex;
+    }
+    colorAttachments = cColorAttachments.data();
+
+    if (depthStencil.Get() != nullptr) {
+        cDepthStencilAttachmentInfo.view = depthStencil;
+        depthStencilAttachment = &cDepthStencilAttachmentInfo;
+    } else {
+        depthStencilAttachment = nullptr;
+    }
+}
+
+ComboRenderPassDescriptor::~ComboRenderPassDescriptor() = default;
+
+ComboRenderPassDescriptor::ComboRenderPassDescriptor(const ComboRenderPassDescriptor& other) { *this = other; }
+
+const ComboRenderPassDescriptor& ComboRenderPassDescriptor::operator=(
+    const ComboRenderPassDescriptor& otherRenderPass) {
+    cDepthStencilAttachmentInfo = otherRenderPass.cDepthStencilAttachmentInfo;
+    cColorAttachments = otherRenderPass.cColorAttachments;
+    colorAttachmentCount = otherRenderPass.colorAttachmentCount;
+
+    colorAttachments = cColorAttachments.data();
+
+    if (otherRenderPass.depthStencilAttachment != nullptr) {
+        // Assign desc.depthStencilAttachment to this->depthStencilAttachmentInfo;
+        depthStencilAttachment = &cDepthStencilAttachmentInfo;
+    } else {
+        depthStencilAttachment = nullptr;
+    }
+
+    return *this;
+}
+
+void ComboRenderPassDescriptor::UnsetDepthStencilLoadStoreOpsForFormat(wgpu::TextureFormat format) {
+    switch (format) {
+        case wgpu::TextureFormat::Depth24Plus:
+        case wgpu::TextureFormat::Depth32Float:
+        case wgpu::TextureFormat::Depth16Unorm:
+            cDepthStencilAttachmentInfo.stencilLoadOp = wgpu::LoadOp::Undefined;
+            cDepthStencilAttachmentInfo.stencilStoreOp = wgpu::StoreOp::Undefined;
+            break;
+        case wgpu::TextureFormat::Stencil8:
+            cDepthStencilAttachmentInfo.depthLoadOp = wgpu::LoadOp::Undefined;
+            cDepthStencilAttachmentInfo.depthStoreOp = wgpu::StoreOp::Undefined;
+            break;
+        default:
+            break;
+    }
+}
+
+wgpu::ImageCopyBuffer CreateImageCopyBuffer(wgpu::Buffer buffer, uint64_t offset, uint32_t bytesPerRow,
+                                            uint32_t rowsPerImage) {
+    wgpu::ImageCopyBuffer imageCopyBuffer = {};
+    imageCopyBuffer.buffer = buffer;
+    imageCopyBuffer.layout = CreateTextureDataLayout(offset, bytesPerRow, rowsPerImage);
+
+    return imageCopyBuffer;
+}
+
+wgpu::ImageCopyTexture CreateImageCopyTexture(wgpu::Texture texture, uint32_t mipLevel, wgpu::Origin3D origin,
+                                              wgpu::TextureAspect aspect) {
+    wgpu::ImageCopyTexture imageCopyTexture;
+    imageCopyTexture.texture = texture;
+    imageCopyTexture.mipLevel = mipLevel;
+    imageCopyTexture.origin = origin;
+    imageCopyTexture.aspect = aspect;
+
+    return imageCopyTexture;
+}
+
+wgpu::TextureDataLayout CreateTextureDataLayout(uint64_t offset, uint32_t bytesPerRow, uint32_t rowsPerImage) {
+    wgpu::TextureDataLayout textureDataLayout;
+    textureDataLayout.offset = offset;
+    textureDataLayout.bytesPerRow = bytesPerRow;
+    textureDataLayout.rowsPerImage = rowsPerImage;
+
+    return textureDataLayout;
+}
+
 }  // namespace utils

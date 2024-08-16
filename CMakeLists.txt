@@ -37,6 +37,7 @@ set(VECTOR_SOURCES
   "wgpu/WGPUHelpers.cpp"
   "wgpu/ComboRenderPipelineDescriptor.cpp"
   "vector/Flatten.cpp"
+  "vector/Renderer.cpp"
   "vector/path/LTRBRect.cpp"
   "vector/path/SVGUtil.cpp"
   "vector/path/VPaint.cpp"

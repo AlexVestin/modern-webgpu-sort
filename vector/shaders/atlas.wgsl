@@ -94,6 +94,8 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     let max_x  = f32(draw_span.path_id >> 16u);
     let max_y  = min_y + TILE_SIZE;
 
+
+    let vertex_id = VertexIndex % 6u; 
     var pos = array(
         vec2(min_x, min_y), // tr0 tl
         vec2(max_x, min_y), // tr0 tr
@@ -103,7 +105,7 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
         vec2(min_x, max_y), // tr1 bl
     );
 
-    var v_pos = pos[VertexIndex % 6u];
+    var v_pos = pos[vertex_id];
 
     // -----Read lines -----
     let offset = ((span_info >> 24u) + 1u) * LINES_PER_QUAD;     

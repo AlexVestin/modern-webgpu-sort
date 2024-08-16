@@ -409,8 +409,6 @@ int main() {
             over += MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
         }
 
-
-        
         // RenderToAtlas(drawSpans, indices, flatPoints);
         // Render(0, drawSpans, indices, flatPoints, colors);
         // WriteImages();
@@ -429,6 +427,7 @@ int main() {
         }
 
         renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
+        renderer.Render(atlasIndices.size(), drawSpans.size());
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;

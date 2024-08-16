@@ -99,7 +99,7 @@ wgpu::Device SetupDevice(const std::unique_ptr<wgpu::Instance>& instance, const 
     deviceDesc.uncapturedErrorCallbackInfo = {nullptr, PrintDeviceError, nullptr};
     deviceDesc.deviceLostCallbackInfo = {nullptr, wgpu::CallbackMode::AllowSpontaneous, PrintDeviceLoss, nullptr};
 
-    std::vector<wgpu::FeatureName> requiredFeatures = {wgpu::FeatureName::TimestampQuery, wgpu::FeatureName::Subgroups};
+    std::vector<wgpu::FeatureName> requiredFeatures = {wgpu::FeatureName::TimestampQuery, wgpu::FeatureName::Subgroups, wgpu::FeatureName::Float32Filterable};
     deviceDesc.requiredFeatures = requiredFeatures.data();
     deviceDesc.requiredFeatureCount = requiredFeatures.size();
 

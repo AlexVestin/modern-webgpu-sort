@@ -1,16 +1,16 @@
 
 #include "Validation.h"
 
-#pragma GCC diagnostic push 
-#pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
-#pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
-#pragma GCC diagnostic ignored "-Wmissing-field-initializers"
-#pragma GCC diagnostic ignored "-Wextra-semi-stmt"
-#define STB_IMAGE_IMPLEMENTATION
-#define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-#include "stb_image.h"
-#pragma GCC diagnostic pop
+// #pragma GCC diagnostic push 
+// #pragma GCC diagnostic ignored "-Wimplicit-fallthrough"
+// #pragma GCC diagnostic ignored "-Wdeprecated-declarations" 
+// #pragma GCC diagnostic ignored "-Wmissing-field-initializers"
+// #pragma GCC diagnostic ignored "-Wextra-semi-stmt"
+// #define STB_IMAGE_IMPLEMENTATION
+// #define STB_IMAGE_WRITE_IMPLEMENTATION
+// #include "stb_image_write.h"
+// #include "stb_image.h"
+// #pragma GCC diagnostic pop
 
 
 static std::array<uint32_t, IMAGE_WIDTH * IMAGE_HEIGHT> image = {};
@@ -354,7 +354,7 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
 void WriteImages() {
     uint32_t channels = 4u;
     uint32_t bpr = IMAGE_WIDTH * channels;
-    stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
+    // stbi_write_png("image.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(image.data()), bpr);
     for (int i = 0; i < atlas.size(); i++) {
         float area = atlas[i];
         float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f);
@@ -362,5 +362,5 @@ void WriteImages() {
     }
     channels = 1u;
     bpr = IMAGE_WIDTH * channels;
-    stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);       
+    // stbi_write_png("image_atlas.png", IMAGE_WIDTH, IMAGE_HEIGHT, channels, static_cast<const void*>(outAtlas.data()), bpr);       
 }
