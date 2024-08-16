@@ -1,12 +1,15 @@
 #pragma once
 
 #include <iostream>
+#include <string>
 
 #include "defs.h"
 
 #include "path/VPoint.h"
 #include "../wgpu/NativeUtils.h"
 #include "../ComputeUtil.h"
+#include "../wgpu/ComboRenderPipelineDescriptor.h"
+#include "../wgpu/Blends.h"
 
 static std::unique_ptr<wgpu::Instance> instance;
 
@@ -14,6 +17,85 @@ static const wgpu::BufferUsage storageUsage = wgpu::BufferUsage::Storage;
 static const wgpu::BufferUsage copyDstUsage = storageUsage | wgpu::BufferUsage::CopyDst;
 static const wgpu::BufferUsage copySrcUsage = storageUsage | wgpu::BufferUsage::CopySrc;
 static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
+
+struct VertexBufferLayout {
+    wgpu::VertexStepMode stepMode = wgpu::VertexStepMode::Vertex;
+    uint32_t stride = 0u;
+    std::vector<wgpu::VertexAttribute> attributes = {};
+};
+
+struct RenderPipelineCreationOptions {
+    wgpu::ShaderModule vertModule;
+    wgpu::ShaderModule fragModule;
+    const wgpu::BlendState* blendState = &lyra::blend::OneMinusSrcAlpha;
+    wgpu::MultisampleState multisampleState = {.count = 1, .mask = 0xFFFFFFFF, .alphaToCoverageEnabled = false};
+    std::string vertexEntryPoint = "vert_main";
+    std::string fragmentEntryPoint = "frag_main";
+    wgpu::TextureFormat targetFormat = wgpu::TextureFormat::RGBA8Unorm;
+    wgpu::PrimitiveTopology topology = wgpu::PrimitiveTopology::TriangleList;
+    std::vector<wgpu::ConstantEntry> constants = {};
+    wgpu::ColorWriteMask targetColorWriteMask = wgpu::ColorWriteMask::All;
+    std::vector<VertexBufferLayout> vertexBufferLayouts = {};
+    const std::vector<const wgpu::BindGroupLayout> bindGroupLayouts = {};
+    const wgpu::ChainedStruct* nextInChain = nullptr;
+};
+
+wgpu::RenderPipeline CreateRenderPipeline(const wgpu::Device& device, const RenderPipelineCreationOptions& options,
+                                          const std::string& label) {
+    utils::ComboRenderPipelineDescriptor descriptor;
+    descriptor.label = label.c_str();
+
+    if (!options.bindGroupLayouts.empty()) {
+        descriptor.layout = utils::MakeBasicPipelineLayout(device, options.bindGroupLayouts.data(),
+                                                           options.bindGroupLayouts.size(), options.nextInChain);
+    }
+
+    descriptor.vertex.module = options.vertModule;
+    descriptor.vertex.entryPoint = options.vertexEntryPoint.c_str();
+    descriptor.vertex.constantCount = options.constants.size();
+    descriptor.vertex.constants = options.constants.data();
+
+    descriptor.vertex.bufferCount = options.vertexBufferLayouts.size();
+
+    for (int i = 0; i < options.vertexBufferLayouts.size(); i++) {
+        auto& layout = options.vertexBufferLayouts[i];
+        descriptor.cBuffers[i].arrayStride = layout.stride;
+        descriptor.cBuffers[i].attributeCount = layout.attributes.size();
+        descriptor.cBuffers[i].attributes = layout.attributes.data();
+        descriptor.cBuffers[i].stepMode = layout.stepMode;
+    }
+
+    descriptor.primitive.topology = options.topology;
+
+    // Fragment info
+    descriptor.cFragment.module = options.fragModule;
+    descriptor.cFragment.entryPoint = options.fragmentEntryPoint.c_str();
+    descriptor.cFragment.constantCount = options.constants.size();
+    descriptor.cFragment.constants = options.constants.data();
+
+    // Target information
+    descriptor.cFragment.targetCount = 1;
+    
+    descriptor.cTargets[0].blend = options.blendState;
+    descriptor.cTargets[0].nextInChain = nullptr;
+    descriptor.cTargets[0].format = options.targetFormat;
+    descriptor.cTargets[0].writeMask = options.targetColorWriteMask;
+
+    return device.CreateRenderPipeline(&descriptor);
+}
+
+
+std::string ReadTextFile(const std::string& path) {
+     std::ifstream t(path.c_str());
+    
+    if (t.fail()) {
+        std::cerr << "Failed to find file" << std::endl;
+        exit(1);
+    }
+    std::stringstream buffer;
+    buffer << t.rdbuf();
+    return buffer.str();
+}
 
 class Renderer {
 public:
@@ -27,7 +109,26 @@ public:
             {3, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
             {4, wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment, wgpu::BufferBindingType::ReadOnlyStorage},
         });
-        // wgpu::PipelineLayoutDescriptor descriptor;
+
+        // Create empty buffers
+        pathInfoBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "ColorBuffer");
+        lineIndexBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "LineIndexBuffer");
+        flatLinePointBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "FlatLinePointBuffer");
+        drawSpansBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "DrawSpansBuffer");
+        atlasIndicesBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "AtlasIndicesBuffer");
+
+        std::string atlasShader = ReadTextFile("vector/shaders/atlas.wgsl");
+        wgpu::ShaderModule shaderModule = utils::CreateShaderModule(device, atlasShader.c_str(), "AtlasShader");
+        pipeline = CreateRenderPipeline(device,
+                                        {.vertModule = shaderModule,
+                                        .fragModule = shaderModule,
+                                        .targetFormat = wgpu::TextureFormat::R16Float,
+                                        .blendState = &lyra::blend::Additive,
+                                        .bindGroupLayouts = {drawBindGroupLayout}},
+                                        "AtlasPipeline");
+        
+
+        wgpu::RenderPipelineDescriptor descriptor;
     }
 
     void InitDevice() {
@@ -54,13 +155,6 @@ public:
 
         wgpu::Adapter adapter = NativeUtils::SetupAdapter(instance);
         device = NativeUtils::SetupDevice(instance, adapter);
-
-        // Create empty buffers
-        pathInfoBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "ColorBuffer");
-        lineIndexBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "LineIndexBuffer");
-        flatLinePointBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "FlatLinePointBuffer");
-        drawSpansBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "DrawSpansBuffer");
-        atlasIndicesBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "AtlasIndicesBuffer");
     }
 
     void CreateBindGroup() {

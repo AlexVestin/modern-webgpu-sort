@@ -1,0 +1,152 @@
+const HALF_PI = 1.5707963268;
+const PI = 3.14159265359;
+const TWO_PI = 6.28318530718;
+const TWO_PI_QUANT = (1.0 / TWO_PI) * 255.0;
+const TILE_SIZE = 4.0;
+const LINES_PER_QUAD = 8u;
+const view_step = vec2f(2.0) / vec2f(1920.0, 1080.0);
+const sqrt_of_half = 0.7071067811865475;
+const sqrt_of_half_256 = 181.01933598375615;
+const num_verts = 6u;
+const tex_div = 1.0 / 2048.0;
+
+struct VSOutput {
+    @builtin(position) position: vec4f,
+    @location(0) @interpolate(linear) dist0: vec4f, // distance from corner to line interpolated per line
+    @location(1) @interpolate(linear) dist1: vec4f,
+    @location(2) @interpolate(flat) heights0: vec2u, // 8 bits per height point, 2 points per line -> 16 bits per line
+    @location(3) @interpolate(flat) heights1: vec2u, 
+    @location(4) @interpolate(flat) angles: vec2u, // 8 bits per angle
+    @location(5) @interpolate(flat) info: vec2u, // pathId 20 bytes, height baseline 12 bytes, 32 bits for buffer index
+};
+
+struct DrawSpan {
+    position: u32,
+    line_start_index: u32,
+    line_end_index: u32,
+    path_id: u32,
+    atlas_position: u32,
+    padding: u32
+};
+
+fn signed_distance(p: vec2f, a: vec2f, b: vec2f) -> f32 {
+    let dir = b - a;
+    let perp = vec2(dir.y, -dir.x);
+    let dir_to_p1 = b - p;
+    return dot(normalize(perp), dir_to_p1);
+}
+
+struct DrawUniforms {
+    view_step: vec2f,
+    toggle: u32,
+    padding: u32,
+}
+
+fn area(p0: vec2f, p1: vec2f, xy: vec2f) -> f32 {
+    let delta = p1 - p0;
+    let y = p0.y - xy.y;
+    let y0 = clamp(y, 0.0, 1.0);
+    let y1 = clamp(y + delta.y, 0.0, 1.0);
+    let dy = y0 - y1;
+
+    if dy != 0.0 {
+        let vec_y_recip = 1.0 / delta.y;
+
+        let t0 = (y0 - y) * vec_y_recip;
+        let t1 = (y1 - y) * vec_y_recip;
+
+        // 
+        let startx = p0.x - xy.x;
+        let x0 = startx + t0 * delta.x;
+        let x1 = startx + t1 * delta.x;
+        let xmin0 = min(x0, x1);
+        let xmax0 = max(x0, x1); 
+
+        let xmin = min(xmin0, 1.0) - 1.0e-3;
+        let xmax = xmax0;
+        let b = min(xmax, 1.0);
+        let c = max(b, 0.0);
+        let d = max(xmin, 0.0);
+        let a = (b + 0.5 * (d * d - c * c) - xmin) / (xmax - xmin);
+        return a * dy;
+    }
+    return 0.0;
+}
+
+@group(0) @binding(0) var<storage, read> colors: array<u32>;
+@group(0) @binding(1) var<storage, read> line_indices: array<u32>;
+@group(0) @binding(2) var<storage, read> points: array<vec2f>;
+@group(0) @binding(3) var<storage, read> draw_spans: array<DrawSpan>;
+@group(0) @binding(4) var<storage, read> atlas_indices: array<u32>;
+
+
+@vertex
+fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
+    var out: VSOutput;
+    let quad_id = VertexIndex / num_verts;
+    
+    let span_info = atlas_indices[quad_id];
+    let span_index = span_info & 0xffffffu;
+    let draw_span = draw_spans[span_index];
+
+    let min_x  = f32(draw_span.position & 0xffffu);
+    let min_y  = f32(draw_span.position >> 16u);
+    let max_x  = f32(draw_span.path_id >> 16u);
+    let max_y  = min_y + TILE_SIZE;
+
+    var pos = array(
+        vec2(min_x, min_y), // tr0 tl
+        vec2(max_x, min_y), // tr0 tr
+        vec2(max_x, max_x), // tr0 br
+        vec2(min_x, min_y), // tr1 tl
+        vec2(max_x, max_y), // tr1 br
+        vec2(min_x, max_y), // tr1 bl
+    );
+
+    var v_pos = pos[VertexIndex % 6u];
+
+    // -----Read lines -----
+    let offset = ((span_info >> 24u) + 1u) * LINES_PER_QUAD;     
+    let start_index = draw_span.line_start_index + offset;
+
+    // Loop 1
+    for (var i = 0u; i < 4u; i++) {
+        let index = line_indices[start_index + i];
+        let p0 = points[index - 1u];
+        let p1 = points[index];
+
+        // Dists
+        out.dist0[i] = signed_distance(v_pos, p0, p1);
+
+        // Angles
+        let line = p1 - p0;
+        let a = u32((atan2(line.y, line.x) + PI) * TWO_PI_QUANT);
+        out.angles[0u] |= (a << (i * 8u));
+
+        // Heights // TODO 
+        let h = 0u;
+        let line_min_y = clamp(min(p0.y, p1.y), min_y, max_y) - min_y;
+        let line_max_y = clamp(max(p0.y, p1.y), min_y, max_y) - min_y;
+        // 
+        out.heights0[i >> 1u] = (h << ((i & 1u) * 16u));
+    }
+
+
+    var p = v_pos * view_step - 1.0;    
+    out.position = vec4<f32>(p.x, -p.y, 0.0, 1.0);
+    return out;
+}
+
+
+@fragment
+fn frag_main(
+    @builtin(position) pos: vec4f,
+    @location(0) @interpolate(linear) dist0: vec4f, // distance from corner to line interpolated per line
+    @location(1) @interpolate(linear) dist1: vec4f,
+    @location(2) @interpolate(flat) heights0: vec2u, // 8 bits per height point, 2 points per line -> 16 bits per line
+    @location(3) @interpolate(flat) heights1: vec2u, 
+    @location(4) @interpolate(flat) angles: vec2u, // 8 bits per angle
+    @location(5) @interpolate(flat) info: vec2u, // pa
+    ) -> @location(0) vec4<f32> {    
+    return vec4f(1.0);
+}
