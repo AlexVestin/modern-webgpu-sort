@@ -254,23 +254,20 @@ void FlattenCommands2(
                 const VPoint& control2 = points[i + 1];
                 const VPoint& point = points[i + 2];
 
-                VPoint c03 = control1 * 3.0f;
-                VPoint c13 = control2 * 3.0f;
-
-                VPoint a =  -_last + c03 - c13 + point;
-                VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
-                float conc = std::max(b.Length(), (a + b).Length());
-                float dt = std::sqrt(sqrt_of_8_tol / conc);
-                float t = std::min(dt, 1.0f);
-
-                
-                while (t < 1.0f) {
-                    outPoints.push_back(evalCubicBez(_last, c03, c13, point, t));
-                    outVerbs.push_back(VPathVerb::kLine);
-                    t += dt;
-                }
-                outPoints.push_back(point);
-                outVerbs.push_back(VPathVerb::kLine);
+                // VPoint c03 = control1 * 3.0f;
+                // VPoint c13 = control2 * 3.0f;
+                // VPoint a =  -_last + c03 - c13 + point;
+                // VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
+                // float conc = std::max(b.Length(), (a + b).Length());
+                // float dt = std::sqrt(sqrt_of_8_tol / conc);
+                // float t = std::min(dt, 1.0f);
+                // while (t < 1.0f) {
+                //     outPoints.push_back(evalCubicBez(_last, c03, c13, point, t));
+                //     outVerbs.push_back(VPathVerb::kLine);
+                //     t += dt;
+                // }
+                // outPoints.push_back(point);
+                // outVerbs.push_back(VPathVerb::kLine);
 
                 VPoint c = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
                 VPoint d = 3.0f * (_last - 2.0f * control1 + control2);
