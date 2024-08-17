@@ -320,7 +320,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("ghost.svg");
+    std::ifstream t("paper-1.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -431,7 +431,7 @@ int main() {
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
         avgTime += ms_double.count();
-        std::cout << flatPoints.size() << " " << drawSpans.size() << " " << indices.size() << " " << atlasIndices.size() << std::endl;
+        // std::cout << flatPoints.size() << " " << drawSpans.size() << " " << indices.size() << " " << atlasIndices.size() << std::endl;
     }
 
     renderer.Dispose();

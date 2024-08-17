@@ -10,11 +10,6 @@ struct FlatCommand {
     VPathVerb verb;
 } __attribute__ ((aligned (16)));
 
-std::vector<FlatCommand> FlattenCommands(
-    const std::vector<VPathVerb>& verbs, 
-    const std::vector<VPoint>& points, 
-    float tolerance);
-
 void FlattenCommands2(
     const std::vector<VPathVerb>& verbs, 
     const std::vector<VPoint>& points, 

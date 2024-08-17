@@ -29,7 +29,7 @@ VPoint evalCubicBez(const VPoint& p0, const VPoint& c0, const VPoint& c1, const 
     return { x, y };
 }
 
- // Evaluating a quadratic curve q at the point t. Returns the (x, y) coordinate at that point.
+// Evaluating a quadratic curve q at the point t. Returns the (x, y) coordinate at that point.
 VPoint evalQuadBez(const VPoint& p0, const VPoint& c0,const VPoint& p1, float t) {
     float mt = 1.0f - t;
     float x = p0.x * mt * mt + 2.0f * c0.x * t * mt + p1.x * t * t;
@@ -88,17 +88,15 @@ void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const 
 
     float u0 = approxInvIntegral(a0);
     float u2 = approxInvIntegral(a2);
-    float it = 0.0f;
-
-    VPoint last = p0;
 
     float udiv = 1.0f / (u2 - u0);
+    float ainc = (a2 - a0) / static_cast<float>(n);
     for (int i = 1; i < n; i++) {
-      float u = approxInvIntegral(a0 + ((a2 - a0) * i) / n);
+      float u = approxInvIntegral(a0 + ainc);
       float t = (u - u0) * udiv;
-      // Output line last, p
       verbs.push_back(VPathVerb::kLine);
       points.push_back(evalQuadBez(p0, c0, p1, t));
+      ainc += ainc;
     }
 
     verbs.push_back(VPathVerb::kLine);
@@ -134,7 +132,7 @@ void cubicBezToQuadratic(const VPoint& p0, const VPoint& c0, const VPoint& c1, c
 // Stole it from lyon2d_geom: https://github.com/nical/lyon/blob/2407b7f5e326b2a8f66bfae81fe02d850d8b0acc/crates/geom/src/cubic_bezier.rs#L153
 void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float t0, float t1, float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
     VPoint from = evalCubicBez(p0, c0, c1, p1, t0);
-    VPoint to = evalCubicBez(p0, c0, c1, p1, t0);
+    VPoint to = evalCubicBez(p0, c0, c1, p1, t1);
     float dxFrom = c0.x - p0.x;
     float dyFrom = c0.y - p0.y;
     float dxCtrl = c1.x - c0.x;
@@ -146,11 +144,14 @@ void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, co
     VPoint cp1 = VPoint::Make(dxCtrl, dyCtrl);
     VPoint cp2 = VPoint::Make(dxTo, dyTo);
     
+    VPoint ev0 = evalQuadBez(cp0, cp1, cp2, t0);
+    VPoint ev1 = evalQuadBez(cp0, cp1, cp2, t1);
+
     float dt = t1 - t0;
-    float xCtrl1 = from.x + evalQuadBez(cp0, cp1, cp2, t0).x * dt;
-    float yCtrl1 = from.y + evalQuadBez(cp0, cp1, cp2, t0).y * dt;
-    float xCtrl2 = to.x - evalQuadBez(cp0, cp1, cp2, t1).x * dt;
-    float yCtrl2 = to.y - evalQuadBez(cp0, cp1, cp2, t1).y * dt;
+    float xCtrl1 = from.x + ev0.x * dt;
+    float yCtrl1 = from.y + ev0.y * dt;
+    float xCtrl2 = to.x - ev1.x * dt;
+    float yCtrl2 = to.y - ev1.y * dt;
 
     // To quadratic
     float c1x = (xCtrl1 * 3.0f - from.x) * 0.5f;
@@ -167,7 +168,7 @@ void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, co
 // Converting the cubic c to a sequence of quadratics, with the specified tolerance.
 // Returns an array that contains these quadratics.
 void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
-    uint32_t numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, 0.0075f);
+    uint32_t numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, 0.1f);
     float step = 1.0f / static_cast<float>(numQuads);
     float n = std::trunc(numQuads);
     float t0 = 0.0f;
@@ -179,203 +180,6 @@ void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, 
     }
   
     CubicBezSplitRange(p0, c0, c1, p1, t0, 1.0f, tolerance, verbs, points);  
-}
-
-
-std::vector<FlatCommand> FlattenCommandsAnalytical(const std::vector<VPathVerb>& verbs, const std::vector<VPoint>& points, float tolerance) {
-    VPoint _last{0, 0};
-    VPoint first{0, 0};
-
-     std::vector<FlatCommand> output{};
-
-    size_t i = 0;
-    const float tolerance4  = tolerance * 4.0f;
-    const float sqrt_of_8 = 2.82842712475f;
-    
-    output.reserve(points.size() * 4);
-    for (auto& verb: verbs) {
-        switch (verb) {
-            case VPathVerb::kClose:
-                output.push_back({first.x, first.y, VPathVerb::kLine});
-                break;
-
-            case VPathVerb::kMove:
-                assert(i < points.size());
-                first = points[i];
-                // intentional fall through
-                [[fallthrough]];
-            case VPathVerb::kLine:  {
-                
-                assert(i < points.size());
-                const VPoint& line = points[i];
-    
-                output.push_back({line.x, line.y, verb});
-                _last = line;
-                i += 1;
-                break;
-            }
-            case VPathVerb::kQuad: {
-                const VPoint& control = points[i];
-                const VPoint& point = points[i + 1];
-
-                float l = (_last - 2.0f * control + point).Length();
-                float dt = std::sqrt(tolerance4 / l);
-
-                float t = 0.0;
-                VPoint p01, p12, line, _lastLine = _last;
-                while (t < 1.0) {
-                    t = std::min(t + dt, 1.0f);
-                    p01 = _last.Lerp(control, t);
-                    p12 = control.Lerp(point, t);
-                    line = p01.Lerp(p12, t);
-                    output.push_back({line.x, line.y, VPathVerb::kLine});
-                }
-                _last = point;
-                i += 2;
-                break;
-            }
-            case VPathVerb::kCubic: {
-                const VPoint& control1 = points[i];
-                const VPoint& control2 = points[i + 1];
-                const VPoint& point = points[i + 2];
-
-                // if (!control1.isCorrect() || !control2.isCorrect() || !point.isCorrect()) {
-                //     std::cerr << "Incorrect line or point" << std::endl;
-                //     return {};
-                // }
-
-                VPoint a = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
-                VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
-                float conc = std::max(b.Length(), (a + b).Length());
-                float dt = std::sqrt((sqrt_of_8 * tolerance) / conc);
-                int cnt = std::ceil(1.0f / dt);
-                dt = 1.0f / static_cast<float>(cnt);
-
-                float t = 0.0;
-                VPoint _lastLine = _last;
-                for (int j = 0; j < cnt; j++) {
-                    t = std::min(t + dt, 1.0f);
-                    VPoint p01 = _last.Lerp(control1, t);
-                    VPoint p12 = control1.Lerp(control2, t);
-                    VPoint p23 = control2.Lerp(point, t);
-                    VPoint p012 = p01.Lerp(p12, t);
-                    VPoint p123 = p12.Lerp(p23, t);
-                    VPoint line = p012.Lerp(p123, t);
-
-                    output.push_back({line.x, line.y, VPathVerb::kLine});
-                    _lastLine = line;
-                }
-
-                _last = point;
-                i += 3;
-                break;
-            }
-
-            default: {
-                std::cerr << "Verb was: " << static_cast<uint32_t>(verbs[i]) << " At position: " << i << " buffer size: " << points.size()
-                          << std::endl;
-                exit(1);
-            }
-        }
-    }
-
-    return output;
-}
-
-
-std::vector<FlatCommand> FlattenCommands(const std::vector<VPathVerb>& verbs, const std::vector<VPoint>& points, float tolerance) {
-    VPoint _last{0, 0};
-    VPoint first{0, 0};
-    std::vector<FlatCommand> output{};
-
-    size_t i = 0;
-    const float TOO_LONG_LINE = 100000.f;
-    const float tolerance4  = tolerance * 4.0f;
-    const float sqrt_of_8 = 2.82842712475f;
-    
-    output.reserve(points.size() * 4);
-    for (auto& verb: verbs) {
-        switch (verb) {
-            case VPathVerb::kClose:
-                output.push_back({first.x, first.y, VPathVerb::kLine});
-                break;
-
-            case VPathVerb::kMove:
-                assert(i < points.size());
-                first = points[i];
-                // intentional fall through
-                [[fallthrough]];
-            case VPathVerb::kLine:  {
-                
-                assert(i < points.size());
-                const VPoint& line = points[i];
-    
-                output.push_back({line.x, line.y, verb});
-                _last = line;
-                i += 1;
-                break;
-            }
-            case VPathVerb::kQuad: {
-                const VPoint& control = points[i];
-                const VPoint& point = points[i + 1];
-
-                float l = (_last - 2.0f * control + point).Length();
-                float dt = std::sqrt(tolerance4 / l);
-
-                float t = 0.0;
-                VPoint p01, p12, line, _lastLine = _last;
-                while (t < 1.0) {
-                    t = std::min(t + dt, 1.0f);
-                    p01 = _last.Lerp(control, t);
-                    p12 = control.Lerp(point, t);
-                    line = p01.Lerp(p12, t);
-                    output.push_back({line.x, line.y, VPathVerb::kLine});
-                }
-                _last = point;
-                i += 2;
-                break;
-            }
-            case VPathVerb::kCubic: {
-                const VPoint& control1 = points[i];
-                const VPoint& control2 = points[i + 1];
-                const VPoint& point = points[i + 2];
-
-                VPoint a = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
-                VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
-                float conc = std::max(b.Length(), (a + b).Length());
-                float dt = std::sqrt((sqrt_of_8 * tolerance) / conc);
-                int cnt = std::ceil(1.0f / dt);
-                dt = 1.0f / static_cast<float>(cnt);
-
-                float t = 0.0;
-                VPoint _lastLine = _last;
-                for (int j = 0; j < cnt; j++) {
-                    t = std::min(t + dt, 1.0f);
-                    VPoint p01 = _last.Lerp(control1, t);
-                    VPoint p12 = control1.Lerp(control2, t);
-                    VPoint p23 = control2.Lerp(point, t);
-                    VPoint p012 = p01.Lerp(p12, t);
-                    VPoint p123 = p12.Lerp(p23, t);
-                    VPoint line = p012.Lerp(p123, t);
-
-                    output.push_back({line.x, line.y, VPathVerb::kLine});
-                    _lastLine = line;
-                }
-
-                _last = point;
-                i += 3;
-                break;
-            }
-
-            default: {
-                std::cerr << "Verb was: " << static_cast<uint32_t>(verbs[i]) << " At position: " << i << " buffer size: " << points.size()
-                          << std::endl;
-                exit(1);
-            }
-        }
-    }
-
-    return output;
 }
 
 
