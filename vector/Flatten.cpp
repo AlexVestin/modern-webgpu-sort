@@ -45,8 +45,8 @@ struct Basic {
 };
 
 Basic QuadBezMapToBasic(const VPoint& p0, const VPoint& c0, const VPoint& p1) {
-    float ddx = 2 * c0.x - p0.x - p1.x;
-    float ddy = 2 * c0.y - p0.y - p1.y;
+    float ddx = 2.0f * c0.x - p0.x - p1.x;
+    float ddy = 2.0f * c0.y - p0.y - p1.y;
     float u0 = (c0.x - p0.x) * ddx + (c0.y - p0.y) * ddy;
     float u2 = (p1.x - c0.x) * ddx + (p1.y - c0.y) * ddy;
     float cross = (p1.x - p0.x) * ddy - (p1.y - p0.y) * ddx;
@@ -63,8 +63,7 @@ void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const 
     Basic params = QuadBezMapToBasic(p0, c0, p1);
     float a0 = approxIntegral(params.x0);
     float a2 = approxIntegral(params.x2);
-    float count =
-      0.5 * std::abs(a2 - a0) * std::sqrt(params.scale / tolerance);
+    float count = 0.5f * std::abs(a2 - a0) * std::sqrt(params.scale / tolerance);
     uint32_t n = static_cast<uint32_t>(std::ceil(count));
     // Handle case where all the points are collinear and the end point is between the start point and the control point
     // if (!std::isinf(count) || n == 0u || n == 1u) {
@@ -102,6 +101,7 @@ void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const 
       points.push_back(evalQuadBez(p0, c0, p1, t));
     }
 
+    verbs.push_back(VPathVerb::kLine);
     points.push_back(p1);
 }
 
@@ -164,13 +164,13 @@ void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, co
 }
 
 
- // Converting the cubic c to a sequence of quadratics, with the specified tolerance.
-  // Returns an array that contains these quadratics.
+// Converting the cubic c to a sequence of quadratics, with the specified tolerance.
+// Returns an array that contains these quadratics.
 void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
-    uint32_t numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, tolerance);
+    uint32_t numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, 0.0075f);
     float step = 1.0f / static_cast<float>(numQuads);
     float n = std::trunc(numQuads);
-    float t0 = 0.0;
+    float t0 = 0.0f;
 
     for (int i = 0; i < n - 1; ++i) {
         float t1 = t0 + step;
