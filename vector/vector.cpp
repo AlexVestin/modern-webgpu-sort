@@ -393,7 +393,7 @@ int main() {
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
 
             uint32_t flatStartIndex = flatVerbs.size();
-            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.2f);
+            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f);
  
             colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
                     el.paint.GetFillColor().GetU8ABGR();
