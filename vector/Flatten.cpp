@@ -3,20 +3,20 @@
 
 // Compute an approximation to int (1 + 4x^2) ^ -0.25 dx
 // This isn't especially good but will do.
-float approxIntegral(float x) {
+inline float approxIntegral(float x) {
    const float d = 0.67f; 
-   return x / (1.0f - d + std::pow(std::pow(d, 4.0f) + 0.25f * x * x, 0.25f));
+   return x / (1.0f - d + std::sqrt(std::sqrt(std::pow(d, 4.0f) + 0.25f * x * x)));
 }
 
 // Approximate the inverse of the function above.
 // This is better.
-float approxInvIntegral(float x) {
+inline float approxInvIntegral(float x) {
     const float b = 0.39f;
     return x * (1.0f - b + std::sqrt(b * b + 0.25f * x * x));
 }
 
 // Evaluating the cubic curve c at parameter t. Returns the (x, y) coordinate at that point.
-VPoint evalCubicBez(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float t) {
+inline VPoint evalCubicBez(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float t) {
     float t2 = t * t;
     float t3 = t2 * t;
     float mt = 1.0f - t;
@@ -25,15 +25,18 @@ VPoint evalCubicBez(const VPoint& p0, const VPoint& c0, const VPoint& c1, const 
   
     float x = p0.x * mt3 + c0.x * 3.0f * mt2 * t + c1.x * 3.0f * mt * t2 + p1.x * t3;
     float y = p0.y * mt3 + c0.y * 3.0f * mt2 * t + c1.y * 3.0f * mt * t2 + p1.y * t3;
-  
     return { x, y };
 }
 
 // Evaluating a quadratic curve q at the point t. Returns the (x, y) coordinate at that point.
-VPoint evalQuadBez(const VPoint& p0, const VPoint& c0,const VPoint& p1, float t) {
+inline VPoint evalQuadBez(const VPoint& p0, const VPoint& c0,const VPoint& p1, float t) {
     float mt = 1.0f - t;
-    float x = p0.x * mt * mt + 2.0f * c0.x * t * mt + p1.x * t * t;
-    float y = p0.y * mt * mt + 2.0f * c0.y * t * mt + p1.y * t * t;
+    float mt2 = mt * mt;
+    float t2 = t * t;
+    float tmt = t * mt;
+
+    float x = p0.x * mt2 + 2.0f * c0.x * tmt + p1.x * t2;
+    float y = p0.y * mt2 + 2.0f * c0.y * tmt + p1.y * t2;
     return { x, y };
 }
 
@@ -44,7 +47,7 @@ struct Basic {
     float cross;
 };
 
-Basic QuadBezMapToBasic(const VPoint& p0, const VPoint& c0, const VPoint& p1) {
+inline Basic QuadBezMapToBasic(const VPoint& p0, const VPoint& c0, const VPoint& p1) {
     float ddx = 2.0f * c0.x - p0.x - p1.x;
     float ddy = 2.0f * c0.y - p0.y - p1.y;
     float u0 = (c0.x - p0.x) * ddx + (c0.y - p0.y) * ddy;
@@ -57,7 +60,7 @@ Basic QuadBezMapToBasic(const VPoint& p0, const VPoint& c0, const VPoint& p1) {
     float scale = std::abs(cross) / (std::hypot(ddx, ddy) * std::abs(x2 - x0));
     
     return { x0, x2, scale, cross };
-  }
+}
 
 void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
     Basic params = QuadBezMapToBasic(p0, c0, p1);
@@ -104,13 +107,15 @@ void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const 
 }
 
  // Returns the number of quadratics needed to approximate the cubic c, given the specified tolerance.
-uint32_t CubicBezNumQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float tolerance) {
+inline float CubicBezNumQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, const float tolerance) {
     float x = p0.x - 3.0f * c0.x + 3.0f * c1.x - p1.x;
     float y = p0.y - 3.0f * c0.y + 3.0f * c1.y - p1.y;
     float err = x * x + y * y;
-  
+
     float result = err / (432.0f * tolerance * tolerance);
-    return std::max(std::ceil(std::pow(result, 1.0f / 6.0f)), 1.0f);
+    float cubeRoot = std::cbrt(result);
+    float sixthRoot = std::sqrt(cubeRoot);
+    return std::max(std::ceil(sixthRoot), 1.0f);
 }
 
 void cubicBezToQuadratic(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1) {
@@ -132,7 +137,8 @@ void cubicBezToQuadratic(const VPoint& p0, const VPoint& c0, const VPoint& c1, c
 // Stole it from lyon2d_geom: https://github.com/nical/lyon/blob/2407b7f5e326b2a8f66bfae81fe02d850d8b0acc/crates/geom/src/cubic_bezier.rs#L153
 void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float t0, float t1, float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
     VPoint from = evalCubicBez(p0, c0, c1, p1, t0);
-    VPoint to = evalCubicBez(p0, c0, c1, p1, t1);
+    VPoint to   = evalCubicBez(p0, c0, c1, p1, t1);
+    
     float dxFrom = c0.x - p0.x;
     float dyFrom = c0.y - p0.y;
     float dxCtrl = c1.x - c0.x;
@@ -154,12 +160,12 @@ void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, co
     float yCtrl2 = to.y - ev1.y * dt;
 
     // To quadratic
-    float c1x = (xCtrl1 * 3.0f - from.x) * 0.5f;
-    float c1y = (yCtrl1 * 3.0f - from.y) * 0.5f;
-    float c2x = (xCtrl2 * 3.0f - to.x) * 0.5f;
-    float c2y = (yCtrl2 * 3.0f - to.y) * 0.5f;
-    float cx = (c1x + c2x) * 0.5f;
-    float cy = (c1y + c2y) * 0.5f;
+    float c1x = xCtrl1 * 3.0f - from.x;
+    float c1y = yCtrl1 * 3.0f - from.y;
+    float c2x = xCtrl2 * 3.0f - to.x;
+    float c2y = yCtrl2 * 3.0f - to.y;
+    float cx = (c1x + c2x) * 0.25f;
+    float cy = (c1y + c2y) * 0.25f;
 
     QuadBezFlatten(from, {cx, cy}, to, tolerance, verbs, points);
 }
@@ -167,13 +173,13 @@ void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, co
 
 // Converting the cubic c to a sequence of quadratics, with the specified tolerance.
 // Returns an array that contains these quadratics.
-void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
-    uint32_t numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, 0.1f);
-    float step = 1.0f / static_cast<float>(numQuads);
-    float n = std::trunc(numQuads);
+void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, const float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
+    float numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, 0.05f);
+    float step = 1.0f / numQuads;
+    uint32_t n = static_cast<uint32_t>(std::trunc(numQuads));
     float t0 = 0.0f;
 
-    for (int i = 0; i < n - 1; ++i) {
+    for (int i = 0; i < n - 1u; i++) {
         float t1 = t0 + step;
         CubicBezSplitRange(p0, c0, c1, p1, t0, t1, tolerance, verbs, points);
         t0 = t1;
@@ -188,7 +194,7 @@ void FlattenCommands2(
     const std::vector<VPoint>& points, 
     std::vector<VPathVerb>& outVerbs,
     std::vector<VPoint>& outPoints,
-    float tolerance) {
+    const float tolerance) {
 
     VPoint _last;
     VPoint first;

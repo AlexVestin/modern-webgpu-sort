@@ -305,7 +305,6 @@ void TraverseGrid(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVer
     }
 }
 
-
 std::vector<lyra::SVGUtil::Element> TestElements() {
     VPath p;
     p.MoveTo(100.0, 100.0);
@@ -338,7 +337,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 10000;
+    uint32_t iterations = 2000;
 
 
     uint32_t flatPointsAllocation = 1 << 20;
