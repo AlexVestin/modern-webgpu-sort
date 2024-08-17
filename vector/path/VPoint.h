@@ -101,6 +101,8 @@ struct VPoint {
 
     friend VPoint operator-(const VPoint& a, float scalar) { return {a.x + scalar, a.y + scalar}; }
 
+    friend VPoint operator-(const VPoint& a) { return {-a.x, -a.y}; }
+
     friend VPoint operator*(const VPoint& a, const VPoint& b) { return {a.x * b.x, a.y * b.y}; }
 
     friend VPoint operator/(const VPoint& a, const VPoint& b) { return {a.x / b.x, a.y / b.y}; }

@@ -173,7 +173,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     // utils::BusyWaitDevice(device);
 
     // WriteAtlasTexture();
-    WriteColorTexture();
+    // WriteColorTexture();
 }
 
 void Renderer::WriteColorTexture() const {

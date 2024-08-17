@@ -1,6 +1,7 @@
 
 #include "Flatten.h"
 
+#include <arm_neon.h>
 
 // Compute an approximation to int (1 + 4x^2) ^ -0.25 dx
 // This isn't especially good but will do.
@@ -221,12 +222,13 @@ void FlattenCommands2(
     std::vector<VPoint>& outPoints,
     float tolerance) {
 
-    VPoint _last{0, 0};
-    VPoint first{0, 0};
+    VPoint _last;
+    VPoint first;
 
     size_t i = 0;
     const float tolerance4  = tolerance * 4.0f;
     const float sqrt_of_8 = 2.82842712475f;
+    const float sqrt_of_8_tol = 2.82842712475f * tolerance;
     
     
     for (auto& verb: verbs) {
@@ -239,10 +241,8 @@ void FlattenCommands2(
             case VPathVerb::kMove:
                 assert(i < points.size());
                 first = points[i];
-                // intentional fall through
                 [[fallthrough]];
             case VPathVerb::kLine:  {
-                assert(i < points.size());
                 const VPoint& line = points[i];
     
                 outPoints.push_back(line);
@@ -257,18 +257,21 @@ void FlattenCommands2(
 
                 float l = (_last - 2.0f * control + point).Length();
                 float dt = std::sqrt(tolerance4 / l);
-
-                float t = 0.0;
-                VPoint p01, p12, line, _lastLine = _last;
-                while (t < 1.0) {
-                    t = std::min(t + dt, 1.0f);
-                    p01 = _last.Lerp(control, t);
-                    p12 = control.Lerp(point, t);
-                    line = p01.Lerp(p12, t);
+            
+                float t = std::min(dt, 1.0f);
+                while (t < 1.0f) {
+                    VPoint p01 = _last.Lerp(control, t);
+                    VPoint p12 = control.Lerp(point, t);
+                    VPoint line = p01.Lerp(p12, t);
 
                     outPoints.push_back(line);
                     outVerbs.push_back(VPathVerb::kLine);
+                    t += dt;
                 }
+                
+                outPoints.push_back(point);
+                outVerbs.push_back(VPathVerb::kLine);
+
                 _last = point;
                 i += 2;
                 break;
@@ -278,28 +281,48 @@ void FlattenCommands2(
                 const VPoint& control2 = points[i + 1];
                 const VPoint& point = points[i + 2];
 
-                VPoint a = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
+                VPoint a = -_last + 3.0f * control1 - 3.0f * control2 + point;
                 VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
                 float conc = std::max(b.Length(), (a + b).Length());
-                float dt = std::sqrt((sqrt_of_8 * tolerance) / conc);
-                int cnt = std::ceil(1.0f / dt);
-                dt = 1.0f / static_cast<float>(cnt);
+                float dt = std::sqrt(sqrt_of_8_tol / conc);
+          
+                float t = std::min(dt, 1.0f);
 
-                float t = 0.0;
-                VPoint _lastLine = _last;
-                for (int j = 0; j < cnt; j++) {
-                    t = std::min(t + dt, 1.0f);
-                    VPoint p01 = _last.Lerp(control1, t);
-                    VPoint p12 = control1.Lerp(control2, t);
-                    VPoint p23 = control2.Lerp(point, t);
-                    VPoint p012 = p01.Lerp(p12, t);
-                    VPoint p123 = p12.Lerp(p23, t);
-                    VPoint line = p012.Lerp(p123, t);
+                VPoint p01diff = control1 - _last;
+                VPoint p12diff = control2 - control1;
+                VPoint p23diff = point - control2;
+
+                while (t < 1.0f) {
+                    float p01x = fmaf(t, p01diff.x, _last.x);
+                    float p01y = fmaf(t, p01diff.y, _last.y);
+
+                    float p12x = fmaf(t, p12diff.x, control1.x);
+                    float p12y = fmaf(t, p12diff.y, control1.y);
+                    
+                    float p23x = fmaf(t, p23diff.x, control2.x);
+                    float p23y = fmaf(t, p23diff.y, control2.y);
+                    
+                    float p012x = fmaf(t, p12x - p01x, p01x);
+                    float p012y = fmaf(t, p12y - p01y, p01y);
+
+                    float p123x = fmaf(t, p23x - p12x, p12x);
+                    float p123y = fmaf(t, p23y - p12y, p12y);
+               
+                    VPoint line = VPoint::Make(fmaf(t, p123x - p012x, p012x), fmaf(t, p123y - p012y, p012y));
+                    // VPoint p01 = _last.Lerp(control1, t);
+                    // VPoint p12 = control1.Lerp(control2, t);
+                    // VPoint p23 = control2.Lerp(point, t);
+                    // VPoint p012 = p01.Lerp(p12, t);
+                    // VPoint p123 = p12.Lerp(p23, t);
+                    // VPoint line = p012.Lerp(p123, t);
 
                     outPoints.push_back(line);
                     outVerbs.push_back(VPathVerb::kLine);
-                    _lastLine = line;
+                    t += dt;
                 }
+
+                outPoints.push_back(point);
+                outVerbs.push_back(VPathVerb::kLine);
 
                 _last = point;
                 i += 3;
