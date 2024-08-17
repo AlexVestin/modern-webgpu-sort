@@ -23,8 +23,8 @@ inline VPoint evalCubicBez(const VPoint& p0, const VPoint& c0, const VPoint& c1,
     float mt2 = mt * mt;
     float mt3 = mt2 * mt;
   
-    float x = p0.x * mt3 + c0.x * 3.0f * mt2 * t + c1.x * 3.0f * mt * t2 + p1.x * t3;
-    float y = p0.y * mt3 + c0.y * 3.0f * mt2 * t + c1.y * 3.0f * mt * t2 + p1.y * t3;
+    float x = p0.x * mt3 + c0.x * mt2 * t + c1.x * mt * t2 + p1.x * t3;
+    float y = p0.y * mt3 + c0.y * mt2 * t + c1.y * mt * t2 + p1.y * t3;
     return { x, y };
 }
 
@@ -232,10 +232,12 @@ void FlattenCommands2(
                 float dt = std::sqrt(tolerance4 / l);
                 float t = std::min(dt, 1.0f);
                 while (t < 1.0f) {
-                    VPoint p01 = _last.Lerp(control, t);
-                    VPoint p12 = control.Lerp(point, t);
-                    VPoint line = p01.Lerp(p12, t);
-                    outPoints.push_back(line);
+                    // VPoint p01 = _last.Lerp(control, t);
+                    // VPoint p12 = control.Lerp(point, t);
+                    // VPoint line = p01.Lerp(p12, t);
+
+                    outPoints.push_back(evalQuadBez(_last, control, point, t));
+                    // outPoints.push_back(line);
                     outVerbs.push_back(VPathVerb::kLine);
                     t += dt;
                 }
@@ -252,27 +254,25 @@ void FlattenCommands2(
                 const VPoint& control2 = points[i + 1];
                 const VPoint& point = points[i + 2];
 
-                // VPoint a = -1.0f * _last + 3.0f * control1 - 3.0f * control2 + point;
-                // VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
-                // float conc = std::max(b.Length(), (a + b).Length());
-                // float dt = std::sqrt(sqrt_of_8_tol / conc);
-                // float t = std::min(dt, 1.0f);
-                // while (t < 1.0f) {
-                //     // t = std::min(t + dt, 1.0f);
-                //     VPoint p01 = _last.Lerp(control1, t);
-                //     VPoint p12 = control1.Lerp(control2, t);
-                //     VPoint p23 = control2.Lerp(point, t);
-                //     VPoint p012 = p01.Lerp(p12, t);
-                //     VPoint p123 = p12.Lerp(p23, t);
-                //     VPoint line = p012.Lerp(p123, t);
-                //     outPoints.push_back(line);
-                //     outVerbs.push_back(VPathVerb::kLine);
-                //     t += dt;
-                // }
-                // outPoints.push_back(point);
-                // outVerbs.push_back(VPathVerb::kLine);
+                VPoint c03 = control1 * 3.0f;
+                VPoint c13 = control2 * 3.0f;
 
-                CubicBezToQuadratics(_last, control1, control2, point, tolerance, outVerbs, outPoints);
+                VPoint a =  -_last + c03 - c13 + point;
+                VPoint b = 3.0f * (_last - 2.0f * control1 + control2);
+                float conc = std::max(b.Length(), (a + b).Length());
+                float dt = std::sqrt(sqrt_of_8_tol / conc);
+                float t = std::min(dt, 1.0f);
+
+                
+                while (t < 1.0f) {
+                    outPoints.push_back(evalCubicBez(_last, c03, c13, point, t));
+                    outVerbs.push_back(VPathVerb::kLine);
+                    t += dt;
+                }
+                outPoints.push_back(point);
+                outVerbs.push_back(VPathVerb::kLine);
+
+                // CubicBezToQuadratics(_last, control1, control2, point, tolerance, outVerbs, outPoints);
                 _last = point;
                 i += 3;
                 break;

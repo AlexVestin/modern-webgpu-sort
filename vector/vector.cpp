@@ -393,7 +393,7 @@ int main() {
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
 
             uint32_t flatStartIndex = flatVerbs.size();
-            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f);
+            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.2f);
  
             colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
                     el.paint.GetFillColor().GetU8ABGR();
@@ -408,23 +408,23 @@ int main() {
             over += MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager);
         }
 
-        // atlasIndices.reserve(over);
-        // uint32_t index = 0;
-        // for (int j = 0; j < drawSpans.size(); j++) {
-        //     const auto& span = drawSpans[j];
-        //     uint32_t lineCount = span.lineEndIndex - span.lineStartIndex;
-        //     if (lineCount > linesPerQuad) {
-        //         uint32_t lim = ComputeUtil::div_up(lineCount, linesPerQuad) - 1u;
-        //         for (int i = 0; i < lim; i++) {
-        //             atlasIndices.push_back((j | (i << 24u)));
-        //         }
-        //     }
-        // }
+        atlasIndices.reserve(over);
+        uint32_t index = 0;
+        for (int j = 0; j < drawSpans.size(); j++) {
+            const auto& span = drawSpans[j];
+            uint32_t lineCount = span.lineEndIndex - span.lineStartIndex;
+            if (lineCount > linesPerQuad) {
+                uint32_t lim = ComputeUtil::div_up(lineCount, linesPerQuad) - 1u;
+                for (int i = 0; i < lim; i++) {
+                    atlasIndices.push_back((j | (i << 24u)));
+                }
+            }
+        }
         // RenderToAtlas2(drawSpans, indices, flatPoints, atlasIndices);
         // Render(0, drawSpans, indices, flatPoints, colors);
         // WriteImages();
-        // renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
-        // renderer.Render(atlasIndices.size(), drawSpans.size());
+        renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
+        renderer.Render(atlasIndices.size(), drawSpans.size());
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
