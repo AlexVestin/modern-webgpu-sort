@@ -2,7 +2,7 @@ const HALF_PI = 1.5707963268;
 const PI = 3.14159265359;
 const TWO_PI = 6.28318530718;
 const TWO_PI_QUANT = (1.0 / TWO_PI) * 255.0;
-const TILE_SIZE = 8.0;
+const TILE_SIZE = 4.0;
 const LINES_PER_QUAD = 8u;
 
 const view_step = vec2f(1.0) / vec2f(1920.0, 1080.0);
@@ -27,8 +27,6 @@ struct DrawSpan {
     path_id: u32,
     atlas_position: u32,
     padding: u32,
-    padding2: u32,
-    padding3: u32,
 };
 
 fn signed_distance(p: vec2f, a: vec2f, b: vec2f) -> f32 {
