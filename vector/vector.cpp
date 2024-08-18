@@ -84,7 +84,7 @@ struct AtlasManager {
 uint32_t MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager) {
 
     uint32_t over = 0u;
-    auto EmitSpan = [&indices, &pathId, &drawSpans, &atlasManager, &spans, &over](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
+    auto EmitSpan = [&](uint32_t from, uint32_t to, uint32_t x, uint32_t y, uint32_t maxX) {
         DrawSpan ds;
         ds.lineStartIndex = indices.size();
         for (int j = from; j < to; j++) {
@@ -179,7 +179,6 @@ uint32_t MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::v
     return over;
 }
 
-
 void TraverseGrid2(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
     VPoint last = flatPoints[workStartIndex];
 
@@ -231,19 +230,18 @@ void TraverseGrid2(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVe
             
             int32_t y1 = static_cast<int32_t>(p1.y * TILE_SIZE_DIV) * TILE_SIZE;
             int32_t dir = (p1.y > p0.y) ? TILE_SIZE : -TILE_SIZE;
-            int32_t offset = (p1.y > p0.y) ? 0 : TILE_SIZE;
+            int32_t offset = (p1.y > p0.y) ? TILE_SIZE : 0;
 
             float slope = (p1.x - p0.x) / (p1.y - p0.y);
             float miny = std::min(p0.y, p1.y);
             float maxy = std::max(p0.y, p1.y);
 
             int32_t yc = lastTileY;
-            float xv0 = p0.x;
             
-            while (yc != y1 + dir) {                
-                float yv1 = std::clamp(static_cast<float>(yc + offset), miny, maxy);
-                float xv1 = p0.x + (yv1 - p0.y) * slope;
-
+            float xv0 = p0.x;
+            float xv1 = p0.x + (std::clamp(static_cast<float>(yc + offset), miny, maxy) - p0.y) * slope; 
+            
+            while (yc != y1 + dir) {
                 if (lastTileY != yc) {
                     // Commit on entering new span
                     Span span;
@@ -252,7 +250,7 @@ void TraverseGrid2(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVe
                     span.lineEndIndex = i;
                     span.spanMaxX = spanMaxX;
 
-                    uint32_t type = p0.y > p1.y ? DIRECTION_UP : DIRECTION_DOWN; // 2 = down
+                    uint32_t type = p0.y > p1.y ? DIRECTION_UP : DIRECTION_DOWN;
                     if (type == spanEntryDirection || spanEntryDirection == ~0u) {
                         span.type = type;
                     } else {
@@ -261,13 +259,17 @@ void TraverseGrid2(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVe
 
                     spans.push_back(span);
 
-                    // Update counters
-                    spanMinX = std::min(xv0, xv1);
-                    spanMaxX = std::max(xv0, xv1);
                     spanLineStartIndex = i;                    
                     spanEntryDirection = type;    
                     lastTileY = yc;
+
+                    // Update x counters
                     xv0 = xv1;
+                    xv1 = p0.x + (std::clamp(static_cast<float>(yc + offset), miny, maxy) - p0.y) * slope; 
+
+                    // Update counters
+                    spanMinX = std::min(xv0, xv1);
+                    spanMaxX = std::max(xv0, xv1);
                 } else {
                     spanMaxX = std::max(spanMaxX, std::max(xv0, xv1));
                     spanMinX = std::min(spanMinX, std::min(xv0, xv1));
@@ -378,7 +380,7 @@ int main() {
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
 
             uint32_t flatStartIndex = flatVerbs.size();
-            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f);
+            FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.2f);
  
             colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
                     el.paint.GetFillColor().GetU8ABGR();

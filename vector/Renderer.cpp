@@ -171,7 +171,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     device.GetQueue().Submit(1, &commandBuffer);
     // utils::BusyWaitDevice(device);
     // WriteAtlasTexture();
-    WriteColorTexture();
+    // WriteColorTexture();
 }
 
 void Renderer::WriteColorTexture() const {

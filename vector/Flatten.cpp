@@ -383,39 +383,39 @@ void FlattenCommands2(
                 float t = dt;
 
                 // // http://www.pennelynn.com/Documents/CUJ/HTML/15.11/BARTLEY/BARTLEY.HTM
-                float dt2 = dt * dt;
-                float dt3 = dt2 * dt; 
-                VPoint c = 3.0f * (c0 - _last);            
-                VPoint d = _last;
-                VPoint adt3 = a * dt3;
-                VPoint bdt2 = b * dt2;
-                // Initial values
-                VPoint f = d;
-                VPoint df = adt3 + bdt2 + c * dt;
-                VPoint dddf = 6.0f * adt3;
-                VPoint ddf = dddf + 2.0f * bdt2;
+                // float dt2 = dt * dt;
+                // float dt3 = dt2 * dt; 
+                // VPoint c = 3.0f * (c0 - _last);            
+                // VPoint d = _last;
+                // VPoint adt3 = a * dt3;
+                // VPoint bdt2 = b * dt2;
+                // // Initial values
+                // VPoint f = d;
+                // VPoint df = adt3 + bdt2 + c * dt;
+                // VPoint dddf = 6.0f * adt3;
+                // VPoint ddf = dddf + 2.0f * bdt2;
                 
-                while (t < 1.0f) {
-                    f = f + df;
-                    df = df + ddf;
-                    ddf = ddf + dddf;
-                    outPoints.push_back(f);
-                    outVerbs.push_back(VPathVerb::kLine);
-                    t += dt;
-                }
-
                 // while (t < 1.0f) {
-                //     // t = std::min(t + dt, 1.0f);
-                //     VPoint p01 = _last.Lerp(c0, t);
-                //     VPoint p12 = c0.Lerp(c1, t);
-                //     VPoint p23 = c1.Lerp(p1, t);
-                //     VPoint p012 = p01.Lerp(p12, t);
-                //     VPoint p123 = p12.Lerp(p23, t);
-                //     VPoint line = p012.Lerp(p123, t);
-                //     outPoints.push_back(line);
+                //     f = f + df;
+                //     df = df + ddf;
+                //     ddf = ddf + dddf;
+                //     outPoints.push_back(f);
                 //     outVerbs.push_back(VPathVerb::kLine);
                 //     t += dt;
                 // }
+
+                while (t < 1.0f) {
+                    // t = std::min(t + dt, 1.0f);
+                    VPoint p01 = _last.Lerp(c0, t);
+                    VPoint p12 = c0.Lerp(c1, t);
+                    VPoint p23 = c1.Lerp(p1, t);
+                    VPoint p012 = p01.Lerp(p12, t);
+                    VPoint p123 = p12.Lerp(p23, t);
+                    VPoint line = p012.Lerp(p123, t);
+                    outPoints.push_back(line);
+                    outVerbs.push_back(VPathVerb::kLine);
+                    t += dt;
+                }
 
                 // while (t < 1.0f) {
                 //     outPoints.push_back(evalCubicBez(p0, c0 * 3.0f, c1 * 3.0f, p1, t));
