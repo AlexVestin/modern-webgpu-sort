@@ -22,11 +22,11 @@ Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
 // x is in range [-inf, width - TILE_SIZE]
 // TODO: clip lines more negative than -32767
 inline uint32_t PackPosition(float x, int32_t y) {
-    return (static_cast<uint32_t>(y) << 16u) | (static_cast<uint32_t>(static_cast<int32_t>(x)) & 0xffffu);
+    return (static_cast<uint32_t>(y) << 16u) | (static_cast<uint32_t>(static_cast<int32_t>(x) + 32767) & 0xffffu);
 }
 
 inline int2 UnpackPosition(uint32_t v) {
-  int32_t x = static_cast<int32_t>(v & 0xffffu);
+  int32_t x = static_cast<int32_t>(v & 0xffffu) - 32767;
   return {x, static_cast<int32_t>(v >> 16u)};
 }
 
@@ -136,7 +136,6 @@ uint32_t MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::v
     int32_t currentSpanX = sp.x;
     int32_t currentSpanY = sp.y;
 
-    std::cout << sp << std::endl;
     uint32_t spanLineCount = (span.lineEndIndex - span.lineStartIndex) + 1u;
     
     for (int i = spanStartId + 1u; i < spans.size(); i++) {
@@ -147,15 +146,11 @@ uint32_t MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::v
         int32_t newSpanY  = nsp.y;
         int32_t newSpanX  = nsp.x;
 
-        std::cout << nsp << std::endl;
-
         // TODO: validate spanLineCount > 1 is correct
         bool canCommit = (newSpanX > maxSpanX) && (backdrop == 0) && spanLineCount > 1;
         bool isSplit = newSpanY == currentSpanY && canCommit;
 
         if ((newSpanY != currentSpanY) || canCommit) {
-       
-
             EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX);
             // set new span
             currentSpanY = newSpanY;
@@ -343,7 +338,7 @@ int main() {
     buffer << t.rdbuf();
     auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
 
-    const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+    const float transform[6] = {1.0, 0.0, 0.0, 1.0, -300.0, 0.0};
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
     // auto elements = TestElements();
 

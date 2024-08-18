@@ -37,7 +37,7 @@ fn signed_distance(p: vec2f, a: vec2f, b: vec2f) -> f32 {
 }
 
 fn unpack_position(v: u32) -> vec2f {
-  let x = f32(v & 0xffffu);
+  let x = f32(v & 0xffffu) - 32767.0;
   return vec2(x, f32(v >> 16u));
 }
 
