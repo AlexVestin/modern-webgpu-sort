@@ -36,6 +36,11 @@ fn signed_distance(p: vec2f, a: vec2f, b: vec2f) -> f32 {
     return dot(normalize(perp), dir_to_p1);
 }
 
+fn unpack_position(v: u32) -> vec2f {
+  let x = f32(v & 0xffffu);
+  return vec2(x, f32(v >> 16u));
+}
+
 fn area(p0: vec2f, p1: vec2f, xy: vec2f) -> f32 {
     let delta = p1 - p0;
     let y = p0.y - xy.y;
@@ -83,8 +88,9 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     let span_index = span_info & 0xffffffu;
 
     let draw_span = draw_spans[span_index];
-    let min_x  = f32(draw_span.position & 0xffffu);
-    let min_y  = f32(draw_span.position >> 16u);
+    let tl = unpack_position(draw_span.position);
+    let min_x  = tl.x;
+    let min_y  = tl.y;
     let max_x  = f32(draw_span.path_id >> 16u);
     let max_y  = min_y + TILE_SIZE;
 
@@ -145,8 +151,9 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     //     out.heights1[i >> 1u] = (h << ((i & 1u) * 16u));
     // }
 
-    let atl_min_x  = f32(draw_span.atlas_position & 0xffffu);
-    let atl_min_y  = f32(draw_span.atlas_position >> 16u);
+    let atl_tl = unpack_position(draw_span.atlas_position);
+    let atl_min_x  = atl_tl.x;
+    let atl_min_y  = atl_tl.y;
     let atl_max_x  = atl_min_x + width;
     let atl_max_y  = atl_min_y + TILE_SIZE;
 
