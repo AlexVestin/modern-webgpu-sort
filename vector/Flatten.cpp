@@ -1,6 +1,19 @@
 
 #include "Flatten.h"
 
+const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
+
+inline float fastInverseSqrt(float x) {
+    union {
+        float f;
+        uint32_t i;
+    } conv = {x};
+    
+    conv.i = 0x5f3759df - (conv.i >> 1);
+    conv.f *= 1.5f - 0.5f * x * conv.f * conv.f;
+    return conv.f;
+}
+
 // Compute an approximation to int (1 + 4x^2) ^ -0.25 dx
 // This isn't especially good but will do.
 inline float approxIntegral(float x) {
@@ -170,6 +183,113 @@ void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, co
     QuadBezFlatten(from, {cx, cy}, to, tolerance, verbs, points);
 }
 
+// Adaptive forward differencing for bezier tesselation.
+// See Lien, Sheue-Ling, Michael Shantz, and Vaughan Pratt. "Adaptive forward differencing for rendering curves and surfaces." ACM SIGGRAPH Computer Graphics. Vol. 21. No. 4. ACM, 1987.
+void nvg__tesselateBezierAFD(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, const float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
+
+	// Power basis.
+	float ax = -x1 + 3*x2 - 3*x3 + x4;
+	float ay = -y1 + 3*y2 - 3*y3 + y4;
+	float bx = 3*x1 - 6*x2 + 3*x3;
+	float by = 3*y1 - 6*y2 + 3*y3;
+	float cx = -3*x1 + 3*x2;
+	float cy = -3*y1 + 3*y2;
+
+	// Transform to forward difference basis (stepsize 1)
+	float px = x1;
+	float py = y1;
+	float dx = ax + bx + cx;
+	float dy = ay + by + cy;
+	float ddx = 6*ax + 2*bx;
+	float ddy = 6*ay + 2*by;
+	float dddx = 6*ax;
+	float dddy = 6*ay;
+
+	//printf("dx: %f, dy: %f\n", dx, dy);
+	//printf("ddx: %f, ddy: %f\n", ddx, ddy);
+	//printf("dddx: %f, dddy: %f\n", dddx, dddy);
+
+	#define AFD_ONE (1<<10)
+
+	int t = 0;
+	int dt = AFD_ONE;
+
+	float tol = tolerance * 4.0;
+
+	while(t < AFD_ONE) {
+
+		// Flatness measure.
+		float d = ddx*ddx + ddy*ddy + dddx*dddx + dddy*dddy;
+
+		// printf("d: %f, th: %f\n", d, th);
+
+		// Go to higher resolution if we're moving a lot
+		// or overshooting the end.
+		while( (d > tol && dt > 1) || (t+dt > AFD_ONE) ) {
+
+			// printf("up\n");
+
+			// Apply L to the curve. Increase curve resolution.
+			dx = .5 * dx - (1.0/8.0)*ddx + (1.0/16.0)*dddx;
+			dy = .5 * dy - (1.0/8.0)*ddy + (1.0/16.0)*dddy;
+			ddx = (1.0/4.0) * ddx - (1.0/8.0) * dddx;
+			ddy = (1.0/4.0) * ddy - (1.0/8.0) * dddy;
+			dddx = (1.0/8.0) * dddx;
+			dddy = (1.0/8.0) * dddy;
+
+			// Half the stepsize.
+			dt >>= 1;
+
+			// Recompute d
+			d = ddx*ddx + ddy*ddy + dddx*dddx + dddy*dddy;
+
+		}
+
+		// Go to lower resolution if we're really flat
+		// and we aren't going to overshoot the end.
+		// XXX: tol/32 is just a guess for when we are too flat.
+		while ( (d > 0 && d < tol/32.0f && dt < AFD_ONE) && (t+2*dt <= AFD_ONE) ) {
+
+			// printf("down\n");
+
+			// Apply L^(-1) to the curve. Decrease curve resolution.
+			dx = 2 * dx + ddx;
+			dy = 2 * dy + ddy;
+			ddx = 4 * ddx + 4 * dddx;
+			ddy = 4 * ddy + 4 * dddy;
+			dddx = 8 * dddx;
+			dddy = 8 * dddy;
+
+			// Double the stepsize.
+			dt <<= 1;
+
+			// Recompute d
+			d = ddx*ddx + ddy*ddy + dddx*dddx + dddy*dddy;
+
+		}
+
+		// Forward differencing.
+		px += dx;
+		py += dy;
+		dx += ddx;
+		dy += ddy;
+		ddx += dddx;
+		ddy += dddy;
+
+		// Output a point.
+		verbs.push_back(VPathVerb::kLine);
+        points.push_back(VPoint::Make(px, py));
+
+		// Advance along the curve.
+		t += dt;
+
+		// Ensure we don't overshoot.
+		assert(t <= AFD_ONE);
+
+	}
+
+}
+
 
 // Converting the cubic c to a sequence of quadratics, with the specified tolerance.
 // Returns an array that contains these quadratics.
@@ -202,7 +322,7 @@ void FlattenCommands2(
     size_t i = 0;
     const float tolerance4  = tolerance * 4.0f;
     const float sqrt_of_8 = 2.82842712475f;
-    const float sqrt_of_8_tol = 2.82842712475f * tolerance;
+    
     
     for (auto& verb: verbs) {
         switch (verb) {
@@ -250,49 +370,45 @@ void FlattenCommands2(
                 break;
             }
             case VPathVerb::kCubic: {
-                const VPoint& control1 = points[i];
-                const VPoint& control2 = points[i + 1];
-                const VPoint& point = points[i + 2];
+                const VPoint& c0 = points[i];
+                const VPoint& c1 = points[i + 1];
+                const VPoint& p1 = points[i + 2];
 
-                VPoint c03 = control1 * 3.0f;
-                VPoint c13 = control2 * 3.0f;
-                VPoint c =  -_last + c03 - c13 + point;
-                VPoint d = 3.0f * (_last - 2.0f * control1 + control2);
-                float conc = std::max(d.Length(), (c + d).Length());
+                VPoint a = p1 - _last + 3.0f * (c0 - c1);
+                VPoint b = 3.0f * (_last - 2.0f * c0 + c1);
+
+                float conc = std::max(b.Length(), (a + b).Length());
+                // float dt = fastInverseSqrt(conc) * sqrt_of_8_tol;
                 float dt = std::sqrt(sqrt_of_8_tol / conc);
+                float t = dt;
 
-                // float t = std::min(dt, 1.0f);
-                // while (t < 1.0f) {
-                //     outPoints.push_back(evalCubicBez(_last, c03, c13, point, t));
-                //     outVerbs.push_back(VPathVerb::kLine);
-                //     t += dt;
-                // }
-                // outPoints.push_back(point);
-                // outVerbs.push_back(VPathVerb::kLine);
-
-
-                VPoint a = _last;
-                VPoint b = 3.0f * (control1 - _last);
+                // // http://www.pennelynn.com/Documents/CUJ/HTML/15.11/BARTLEY/BARTLEY.HTM
+                float dt2 = dt * dt;
+                float dt3 = dt2 * dt; 
+                VPoint c = 3.0f * (c0 - _last);            
+                VPoint d = _last;
+                VPoint adt3 = a * dt3;
+                VPoint bdt2 = b * dt2;
                 // Initial values
-                VPoint f = a;
-                VPoint df = b * dt;
-                VPoint ddf = c * dt * dt;
-                VPoint dddf = d * dt * dt * dt;
-                uint32_t numSteps = std::trunc(1.0f / dt);
-                for (int i = 1; i < numSteps; i++) {
+                VPoint f = d;
+                VPoint df = adt3 + bdt2 + c * dt;
+                VPoint dddf = 6.0f * adt3;
+                VPoint ddf = dddf + 2.0f * bdt2;
+                
+                while (t < 1.0f) {
                     f = f + df;
                     df = df + ddf;
                     ddf = ddf + dddf;
                     outPoints.push_back(f);
                     outVerbs.push_back(VPathVerb::kLine);
+                    t += dt;
                 }
 
-                // float t = dt;
                 // while (t < 1.0f) {
                 //     // t = std::min(t + dt, 1.0f);
-                //     VPoint p01 = _last.Lerp(control1, t);
-                //     VPoint p12 = control1.Lerp(control2, t);
-                //     VPoint p23 = control2.Lerp(point, t);
+                //     VPoint p01 = _last.Lerp(c0, t);
+                //     VPoint p12 = c0.Lerp(c1, t);
+                //     VPoint p23 = c1.Lerp(p1, t);
                 //     VPoint p012 = p01.Lerp(p12, t);
                 //     VPoint p123 = p12.Lerp(p23, t);
                 //     VPoint line = p012.Lerp(p123, t);
@@ -300,11 +416,19 @@ void FlattenCommands2(
                 //     outVerbs.push_back(VPathVerb::kLine);
                 //     t += dt;
                 // }
-                outPoints.push_back(point);
-                outVerbs.push_back(VPathVerb::kLine);
 
+                // while (t < 1.0f) {
+                //     outPoints.push_back(evalCubicBez(p0, c0 * 3.0f, c1 * 3.0f, p1, t));
+                //     outVerbs.push_back(VPathVerb::kLine);
+                //     t += dt;
+                // }
+
+                // nvg__tesselateBezierAFD(p0.x, p0.y, c0.x, c0.y, c1.x, c1.y, p1.x, p1.y, tolerance, outVerbs, outPoints);
+
+                outPoints.push_back(p1);
+                outVerbs.push_back(VPathVerb::kLine);
                 // CubicBezToQuadratics(_last, control1, control2, point, tolerance, outVerbs, outPoints);
-                _last = point;
+                _last = p1;
                 i += 3;
                 break;
             }

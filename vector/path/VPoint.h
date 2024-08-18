@@ -77,11 +77,11 @@ struct VPoint {
 
     VPoint scale(float* transform) { return {x / transform[0], y / transform[3]}; }
 
-    float Dot(const VPoint& other) const { return this->x * other.x + this->y * other.y; }
+    inline float Dot(const VPoint& other) const { return this->x * other.x + this->y * other.y; }
 
     float Cross(const VPoint& other) { return this->x * other.y - this->y * other.x; }
 
-    float Length() const { return sqrt(this->Dot(*this)); }
+    inline float Length() const { return sqrt(this->Dot(*this)); }
 
     VPoint Sign() const { return VPoint::Make(sgn(this->x), sgn(this->y)); }
 
