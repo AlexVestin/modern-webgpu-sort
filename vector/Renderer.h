@@ -34,8 +34,8 @@ public:
     void CreateBindGroup();
 
     template <typename T>
-    void CreateOrUploadBuffer(const wgpu::Device& device, wgpu::Buffer* buffer, const std::vector<T>& data, const char* label) {
-        uint32_t dataByteSize = data.size() * sizeof(T);
+    void CreateOrUploadBuffer(const wgpu::Device& device, wgpu::Buffer* buffer, const std::vector<T>& data, uint32_t size, const char* label) {
+        uint32_t dataByteSize = size * sizeof(T);
         if (dataByteSize > buffer->GetSize()) {
             // buffer->Destroy();
             *buffer = utils::CreateBufferFromData(device, data.data(), dataByteSize, copyDstUsage, label);
@@ -52,7 +52,8 @@ public:
         const std::vector<VPoint>& flatPoints,
         const std::vector<uint32_t>& indices,
         const std::vector<DrawSpan>& drawSpans,
-        const std::vector<uint32_t>& atlasIndices);
+        const std::vector<uint32_t>& atlasIndices,
+        uint32_t numFlatPoints);
 
     void Dispose();
 

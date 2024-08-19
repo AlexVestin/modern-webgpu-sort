@@ -152,7 +152,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
 
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
-    if(atlasIndices > 0u) {
+    if (atlasIndices > 0u) {
         utils::ComboRenderPassDescriptor atlasPassDescriptor({atlasTextureView});
         atlasPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
         atlasPassDescriptor.cColorAttachments[0].storeOp = wgpu::StoreOp::Store;
@@ -228,14 +228,15 @@ void Renderer::Upload(
     const std::vector<VPoint>& flatPoints,
     const std::vector<uint32_t>& indices,
     const std::vector<DrawSpan>& drawSpans,
-    const std::vector<uint32_t>& atlasIndices) {
+    const std::vector<uint32_t>& atlasIndices,
+    uint32_t numFlatPoints) {
     uploadAmount = 0u;
     
-    CreateOrUploadBuffer(device, &pathInfoBuffer, colors, "ColorBuffer");
-    CreateOrUploadBuffer(device, &lineIndexBuffer, indices, "LineIndexBuffer");
-    CreateOrUploadBuffer(device, &flatLinePointBuffer, flatPoints, "FlatPointBuffer");
-    CreateOrUploadBuffer(device, &drawSpansBuffer, drawSpans, "DrawSpansBuffer");
-    CreateOrUploadBuffer(device, &atlasIndicesBuffer, atlasIndices, "AtlasIndicesBuffer");
+    CreateOrUploadBuffer(device, &pathInfoBuffer, colors, colors.size(), "ColorBuffer");
+    CreateOrUploadBuffer(device, &lineIndexBuffer, indices, indices.size(), "LineIndexBuffer");
+    CreateOrUploadBuffer(device, &flatLinePointBuffer, flatPoints, numFlatPoints, "FlatPointBuffer");
+    CreateOrUploadBuffer(device, &drawSpansBuffer, drawSpans, drawSpans.size(), "DrawSpansBuffer");
+    CreateOrUploadBuffer(device, &atlasIndicesBuffer, atlasIndices, atlasIndices.size(), "AtlasIndicesBuffer");
 
     if (needsRecreateBindGroup) {
         CreateBindGroup();

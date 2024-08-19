@@ -1,7 +1,24 @@
 
 #include "Flatten.h"
 
-const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
+const float sqrt_of_8 = 2.82842712475f;
+const float sqrt_of_8_tol = 2.82842712475f * 0.175f;
+
+
+// y is in range [0, height - TILE_SIZE]
+// x is in range [-inf, width - TILE_SIZE]
+// TODO: clip lines more negative than -32767
+static inline uint32_t PackPosition(int32_t x, int32_t y) {
+    return (static_cast<uint32_t>(y) << 16u) | (static_cast<uint32_t>(x + 32767) & 0xffffu);
+}
+
+static inline int2 UnpackPosition(uint32_t v) {
+  return {static_cast<int32_t>(v & 0xffffu) - 32767, static_cast<int32_t>(v >> 16u)};
+}
+
+static inline int32_t RoundDownToTile(float v) {
+    return static_cast<int32_t>(v * TILE_SIZE_DIV) * TILE_SIZE;
+}
 
 inline float fastInverseSqrt(float x) {
     union {
@@ -309,62 +326,166 @@ void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, 
 }
 
 
-void FlattenCommands2(
+
+uint32_t FlattenCommandsCombined(
     const std::vector<VPathVerb>& verbs, 
     const std::vector<VPoint>& points, 
     std::vector<VPathVerb>& outVerbs,
     std::vector<VPoint>& outPoints,
-    const float tolerance) {
+    const float tolerance,
+    uint32_t baseLineIndex,
+    std::vector<Span>& spans) {
 
-    VPoint _last;
-    VPoint first;
+    VPoint p0 = points[0];
+    VPoint first = p0;
+    outPoints[baseLineIndex] = p0;
 
-    size_t i = 0;
+    // Traversal stuff
+    int32_t spanTileY = RoundDownToTile(p0.y);
+    uint32_t spanEntryDirection = ~0u;
+
+    float spanMinX = p0.x;
+    float spanMaxX = p0.x;
+
+    uint32_t spanLineStartIndex = baseLineIndex + 1u;
+    uint32_t contourId = spans.size();
+
+    auto EmitClose = [&](uint32_t i) {
+        Span span;
+        span.key = PackPosition(spanMinX, spanTileY);
+        span.lineStartIndex = spanLineStartIndex;
+        span.PackTypeLineEndIndex(0, i - 1);
+        span.spanMaxX = spanMaxX;
+
+        // if we didn't exit the current span we dont need to update 
+
+        // TODO: when is contourType ever != 0?
+        // if (contourId < spans.size() && spans[contourId].GetType() == spanEntryDirection) {
+        //     spans[contourId].SetType(spanEntryDirection);
+        // }
+        if (contourId < spans.size()) {
+            uint32_t contourType = spans[contourId].GetType();  
+            
+            if ((contourType == 0 && (spanEntryDirection == 0u || spanEntryDirection == ~0u)) || (contourType != spanEntryDirection)) {
+                spans[contourId].SetType(0);
+            } else {
+                spans[contourId].SetType(spanEntryDirection);
+            }
+        }
+        
+        spans.push_back(span);
+    };
+
+    auto TraverseLine = [&](const VPoint& p1, uint32_t i) {
+        // Horizontal lines
+        if (p1.y >= spanTileY && p1.y < spanTileY + TILE_SIZE) {
+            spanMaxX = std::max(spanMaxX, p1.x);
+            spanMinX = std::min(spanMinX, p1.x);
+            p0 = p1;
+            return;
+        }
+        
+        bool downward = p1.y > p0.y;
+        int32_t step = downward ? TILE_SIZE : -TILE_SIZE;
+        int32_t offset = downward ? TILE_SIZE : 0;
+
+        float slope = (p1.x - p0.x) / (p1.y - p0.y);
+        float ymin = std::min(p0.y, p1.y);
+        float ymax = std::max(p0.y, p1.y);
+
+        float xv0 = p0.x;
+        float xv1 = p0.x + (std::clamp(static_cast<float>(spanTileY + offset), ymin, ymax) - p0.y) * slope; 
+
+        spanMaxX = std::max(spanMaxX, xv1);
+        spanMinX = std::min(spanMinX, xv1);
+        
+        int32_t yc = spanTileY + step;       
+        int32_t y1 = RoundDownToTile(p1.y);
+
+        while (yc != y1 + step) {
+            // Push span
+            Span span;
+            span.key = PackPosition(spanMinX, spanTileY);
+            span.lineStartIndex = spanLineStartIndex;
+            span.spanMaxX = spanMaxX;
+
+            uint32_t type = downward ? DIRECTION_DOWN : DIRECTION_UP;
+            if (type == spanEntryDirection || spanEntryDirection == ~0u) {
+                span.PackTypeLineEndIndex(type, i);
+            } else {
+                span.PackTypeLineEndIndex(0, i);
+            }
+            spans.push_back(span);
+
+            // Update counters
+            spanLineStartIndex = i;                    
+            spanEntryDirection = type;    
+            spanTileY = yc;
+
+            xv0 = xv1;
+            xv1 = p0.x + (std::clamp(static_cast<float>(yc + offset), ymin, ymax) - p0.y) * slope; 
+
+            spanMinX = std::min(xv0, xv1);
+            spanMaxX = std::max(xv0, xv1);
+            
+            yc += step;
+        }
+
+        p0 = p1;
+    };
+
+
+    size_t i = 1;
     const float tolerance4  = tolerance * 4.0f;
-    const float sqrt_of_8 = 2.82842712475f;
     
-    
-    for (const auto& verb: verbs) {
-        switch (verb) {
+    uint32_t lineIndex = baseLineIndex + 1;
+    for (int j = 1; j < verbs.size(); j++) {
+        switch (verbs[j]) {
             case VPathVerb::kClose:
-                outPoints.push_back(first);
-                outVerbs.push_back(VPathVerb::kLine);
+                outPoints[lineIndex++] = first;
+                TraverseLine(first, lineIndex);
                 break;
-
             case VPathVerb::kMove:
-                assert(i < points.size());
                 first = points[i];
-                [[fallthrough]];
+                p0 = first;
+                outPoints[lineIndex++] = first;
+
+                // Traversal close
+                EmitClose(i);
+                spanLineStartIndex = lineIndex;
+                spanTileY = RoundDownToTile(p0.y);
+                spanEntryDirection = ~0u;
+                spanMaxX = p0.x;
+                spanMinX = p0.x;
+                contourId = spans.size();
+                i++;
+                break;
             case VPathVerb::kLine:  {
                 const VPoint& line = points[i];
-                outPoints.push_back(line);
-                outVerbs.push_back(verb);
-                _last = line;
-                i += 1;
+                outPoints[lineIndex++] = line;
+                TraverseLine(line, lineIndex);
+                p0 = line;
+                i++;
                 break;
             }
             case VPathVerb::kQuad: {
                 const VPoint& control = points[i];
                 const VPoint& point = points[i + 1];
 
-                float l = (_last - 2.0f * control + point).Length();
+                float l = (p0 - 2.0f * control + point).Length();
                 float dt = std::sqrt(tolerance4 / l);
                 float t = std::min(dt, 1.0f);
-                while (t < 1.0f) {
-                    // VPoint p01 = _last.Lerp(control, t);
-                    // VPoint p12 = control.Lerp(point, t);
-                    // VPoint line = p01.Lerp(p12, t);
 
-                    outPoints.push_back(evalQuadBez(_last, control, point, t));
-                    // outPoints.push_back(line);
-                    outVerbs.push_back(VPathVerb::kLine);
+                VPoint ogp = p0;
+                while (t < 1.0f) {
+                    VPoint p = evalQuadBez(ogp, control, point, t);
+                    outPoints[lineIndex++] = p;
+                    TraverseLine(p, lineIndex);
                     t += dt;
                 }
-                outPoints.push_back(point);
-                outVerbs.push_back(VPathVerb::kLine);
-
-                // QuadBezFlatten(_last, control, point, tolerance, outVerbs, outPoints);
-                _last = point;
+                outPoints[lineIndex++] = point;
+                TraverseLine(point, lineIndex);
+                p0 = point;
                 i += 2;
                 break;
             }
@@ -373,8 +494,8 @@ void FlattenCommands2(
                 const VPoint& c1 = points[i + 1];
                 const VPoint& p1 = points[i + 2];
 
-                VPoint a = p1 - _last + 3.0f * (c0 - c1);
-                VPoint b = 3.0f * (_last - 2.0f * c0 + c1);
+                VPoint a = p1 - p0 + 3.0f * (c0 - c1);
+                VPoint b = 3.0f * (p0 - 2.0f * c0 + c1);
 
                 float conc = std::max(b.Length(), (a + b).Length());
                 // float dt = fastInverseSqrt(conc) * sqrt_of_8_tol;
@@ -384,8 +505,8 @@ void FlattenCommands2(
                 // // http://www.pennelynn.com/Documents/CUJ/HTML/15.11/BARTLEY/BARTLEY.HTM
                 float dt2 = dt * dt;
                 float dt3 = dt2 * dt; 
-                VPoint c = 3.0f * (c0 - _last);            
-                VPoint d = _last;
+                VPoint c = 3.0f * (c0 - p0);            
+                VPoint d = p0;
                 VPoint adt3 = a * dt3;
                 VPoint bdt2 = b * dt2;
                 // Initial values
@@ -398,36 +519,138 @@ void FlattenCommands2(
                     f = f + df;
                     df = df + ddf;
                     ddf = ddf + dddf;
-                    outPoints.push_back(f);
-                    outVerbs.push_back(VPathVerb::kLine);
+                    outPoints[lineIndex++] = f;
+                    TraverseLine(f, lineIndex);
+                    p0 = f;
                     t += dt;
                 }
 
-                // while (t < 1.0f) {
-                //     // t = std::min(t + dt, 1.0f);
-                //     VPoint p01 = _last.Lerp(c0, t);
-                //     VPoint p12 = c0.Lerp(c1, t);
-                //     VPoint p23 = c1.Lerp(p1, t);
-                //     VPoint p012 = p01.Lerp(p12, t);
-                //     VPoint p123 = p12.Lerp(p23, t);
-                //     VPoint line = p012.Lerp(p123, t);
-                //     outPoints.push_back(line);
-                //     outVerbs.push_back(VPathVerb::kLine);
-                //     t += dt;
-                // }
+                outPoints[lineIndex++] = p1;
+                TraverseLine(p1, lineIndex);
+                p0 = p1;
+                i += 3;
+                break;
+            }
 
-                // while (t < 1.0f) {
-                //     outPoints.push_back(evalCubicBez(p0, c0 * 3.0f, c1 * 3.0f, p1, t));
-                //     outVerbs.push_back(VPathVerb::kLine);
-                //     t += dt;
-                // }
+            default: {
+                std::cerr << "Verb was: " << " At position: " << i << " buffer size: " << points.size()
+                          << std::endl;
+                exit(1);
+            }
+        }
+    }
 
-                // nvg__tesselateBezierAFD(p0.x, p0.y, c0.x, c0.y, c1.x, c1.y, p1.x, p1.y, tolerance, outVerbs, outPoints);
+    EmitClose(lineIndex);
 
-                outPoints.push_back(p1);
-                outVerbs.push_back(VPathVerb::kLine);
+    return lineIndex;
+}
+
+
+uint32_t FlattenCommands2(
+    const std::vector<VPathVerb>& verbs, 
+    const std::vector<VPoint>& points, 
+    std::vector<VPathVerb>& outVerbs,
+    std::vector<VPoint>& outPoints,
+    const float tolerance,
+    uint32_t baseLineIndex) {
+
+    VPoint p0 = points[0];
+    VPoint first = p0;
+    
+    uint32_t lineIndex = baseLineIndex;
+    outPoints[lineIndex] = p0;
+    outVerbs[lineIndex++] = VPathVerb::kMove;
+
+    size_t i = 1;
+    const float tolerance4  = tolerance * 4.0f;
+    const float sqrt_of_8 = 2.82842712475f;
+    for(int j = 1; j < verbs.size(); j++) {
+        switch (verbs[j]) {
+            case VPathVerb::kClose:
+                // outPoints.push_back(first);
+                // outVerbs.push_back(VPathVerb::kLine);
+
+                outPoints[lineIndex] = first;
+                outVerbs[lineIndex++] = VPathVerb::kLine;
+                break;
+
+            case VPathVerb::kMove:
+                first = points[i];
+                p0 = first;
+                outPoints[lineIndex] = first;
+                outVerbs[lineIndex++] = VPathVerb::kMove;
+                i++;
+                break;
+            case VPathVerb::kLine:  {
+                const VPoint& line = points[i];
+                outPoints[lineIndex] = line;
+                outVerbs[lineIndex++] = VPathVerb::kLine;
+                p0 = line;
+                i++;
+                break;
+            }
+            case VPathVerb::kQuad: {
+                const VPoint& control = points[i];
+                const VPoint& point = points[i + 1];
+
+                float l = (p0 - 2.0f * control + point).Length();
+                float dt = std::sqrt(tolerance4 / l);
+                float t = std::min(dt, 1.0f);
+                while (t < 1.0f) {
+                    outPoints[lineIndex] = evalQuadBez(p0, control, point, t);
+                    outVerbs[lineIndex++] = VPathVerb::kLine;
+                    t += dt;
+                }
+
+                outPoints[lineIndex] = point;
+                outVerbs[lineIndex++] = VPathVerb::kLine;
+ 
+
+                // QuadBezFlatten(_last, control, point, tolerance, outVerbs, outPoints);
+                p0 = point;
+                i += 2;
+                break;
+            }
+            case VPathVerb::kCubic: {
+                const VPoint& c0 = points[i];
+                const VPoint& c1 = points[i + 1];
+                const VPoint& p1 = points[i + 2];
+
+                VPoint a = p1 - p0 + 3.0f * (c0 - c1);
+                VPoint b = 3.0f * (p0 - 2.0f * c0 + c1);
+
+                float conc = std::max(b.Length(), (a + b).Length());
+                // float dt = fastInverseSqrt(conc) * sqrt_of_8_tol;
+                float dt = std::sqrt(sqrt_of_8_tol / conc);
+                float t = dt;
+
+                // // http://www.pennelynn.com/Documents/CUJ/HTML/15.11/BARTLEY/BARTLEY.HTM
+                float dt2 = dt * dt;
+                float dt3 = dt2 * dt; 
+                VPoint c = 3.0f * (c0 - p0);            
+                VPoint d = p0;
+                VPoint adt3 = a * dt3;
+                VPoint bdt2 = b * dt2;
+                // Initial values
+                VPoint f = d;
+                VPoint df = adt3 + bdt2 + c * dt;
+                VPoint dddf = 6.0f * adt3;
+                VPoint ddf = dddf + 2.0f * bdt2;
+                
+                while (t < 1.0f) {
+                    f = f + df;
+                    df = df + ddf;
+                    ddf = ddf + dddf;
+
+                    outPoints[lineIndex] = f;
+                    outVerbs[lineIndex++] = VPathVerb::kLine;
+                    t += dt;
+                }
+
+                outPoints[lineIndex] = p1;
+                outVerbs[lineIndex++] = VPathVerb::kLine;
                 // CubicBezToQuadratics(_last, control1, control2, point, tolerance, outVerbs, outPoints);
-                _last = p1;
+                p0 = p1;
                 i += 3;
                 break;
             }
@@ -439,4 +662,6 @@ void FlattenCommands2(
             }
         }
     }
+
+    return lineIndex;
 }
