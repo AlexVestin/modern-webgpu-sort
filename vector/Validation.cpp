@@ -83,16 +83,16 @@ void ValidateSpanLine(const Span& span, const std::vector<FlatCommand>& flatLine
     int32_t tx = (span.key & 0xffffu);
 
     if (LOG) {
-        std::cout << y  << " tilex: " << (span.key & 0xffff) << "  maxx: " << span.spanMaxX << " Type: " << span.type << std::endl;
+        std::cout << y  << " tilex: " << (span.key & 0xffff) << "  maxx: " << span.spanMaxX << " Type: " << span.GetType() << std::endl;
     }
     int32_t mx = -1111;
 
-    if (span.lineStartIndex > span.lineEndIndex) {
+    if (span.lineStartIndex > span.GetLineEndIndex()) {
         std::cerr << "Empty span" << std::endl;
         exit(1);
     }
 
-    for (int i = span.lineStartIndex; i <= span.lineEndIndex; i++) {
+    for (int i = span.lineStartIndex; i <= span.GetLineEndIndex(); i++) {
         const VPoint& p0 = flatLines[i - 1].point;
         const VPoint& p1 = flatLines[i].point;
 
@@ -148,8 +148,8 @@ void ValidateSpanLine(const Span& span, const std::vector<FlatCommand>& flatLine
     }
 
     if (mx != span.spanMaxX) {
-        std::cerr << "Faulty max span x total check: " << mx << " " << span.spanMaxX << " (" << span.lineStartIndex << " " << span.lineEndIndex << ")" << std::endl;
-        for(int i = span.lineStartIndex; i < span.lineEndIndex; i++) {
+        std::cerr << "Faulty max span x total check: " << mx << " " << span.spanMaxX << " (" << span.lineStartIndex << " " << span.GetLineEndIndex() << ")" << std::endl;
+        for(int i = span.lineStartIndex; i < span.GetLineEndIndex(); i++) {
             std::cout << flatLines[i].point << std::endl;
         }
         exit(1);

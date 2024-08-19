@@ -180,10 +180,15 @@ fn frag_main(
     let cnt = info.x >> 24u;
     var a = 0.0; //textureSample(atlas_texture, atlas_sampler, uv).x;
     for (var i = 0u; i < cnt; i++) {
-        let index = line_indices[start + i];
-        let p0 = points[index - 1u];
-        let p1 = points[index];
-        a += area(p0, p1, xy) * f32(i < cnt);
+        let index_data = line_indices[start + i];
+        let span_start_index = index_data & 0xffffffu;
+        let span_line_count = index_data >> 24u;
+        for (var j = 0u; j < span_line_count; j++) {
+            let p0 = points[span_start_index + j - 1u];
+            let p1 = points[span_start_index + j];
+            a += area(p0, p1, xy) * f32(i < cnt);
+        }
+        
     }
     a = min(abs(a - 2.0 * round(0.5 * a)), 1.0); 
     return unpack4x8unorm(info.y) * a;

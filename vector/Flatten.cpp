@@ -1,7 +1,7 @@
 
 #include "Flatten.h"
 
-const float sqrt_of_8_tol = 2.82842712475f * 0.175f;
+const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
 
 inline float fastInverseSqrt(float x) {
     union {

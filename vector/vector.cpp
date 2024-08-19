@@ -100,11 +100,17 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         x = std::max(0, x);
         DrawSpan ds;
         ds.lineStartIndex = indices.size();
+        
         for (int j = from; j < to; j++) {
             const auto& s = spans[j];
-            for (int k = s.lineStartIndex; k <= s.lineEndIndex; k++) {
-                indices.push_back(k);
+            uint32_t numLines = s.NumLines();            
+            for (int k = 0; k < ComputeUtil::div_up(numLines, 256); k++) {
+                uint32_t index = s.lineStartIndex + k * 256u;
+                indices.push_back((index & 0xffffffu) | (numLines << 24u));
             }
+            // for (int k = s.lineStartIndex; k <= s.GetLineEndIndex(); k++) {
+            //         indices.push_back(k);
+            // }
         } 
         ds.lineEndIndex = indices.size();
         ds.pathId = (static_cast<uint32_t>((maxX + 1u)) << 16u) | pathId;
@@ -140,7 +146,7 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
     int32_t currentSpanX = sp.x;
     int32_t currentSpanY = sp.y;
 
-    uint32_t spanLineCount = (span.lineEndIndex - span.lineStartIndex) + 1u;
+    uint32_t spanLineCount = span.NumLines();
     
     for (int i = spanStartId + 1u; i < spans.size(); i++) {
         const Span& newSpan = spans[i];
@@ -153,6 +159,7 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         bool canCommit = (newSpanX > maxSpanX) && (backdrop == 0) && spanLineCount > 1;
         bool isSplit = newSpanY == currentSpanY && canCommit;
 
+        uint32_t lineCount = newSpan.NumLines();
         if ((newSpanY != currentSpanY) || canCommit) {
             EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX);
             // set new span
@@ -160,11 +167,11 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
             currentSpanX = newSpanX;
             maxSpanX = newSpan.spanMaxX;
             backdrop = 0;
-            spanLineCount = (newSpan.lineEndIndex - newSpan.lineStartIndex) + 1u;
+            spanLineCount = lineCount;
             spanId = i;
         } else {
             // Merge
-            uint32_t lineCount = (newSpan.lineEndIndex - newSpan.lineStartIndex) + 1u;
+            
             // if (maxSpanX <newSpanX && currentSpanX !=newSpanX) {
             //     uint32_t gap =newSpanX - maxSpanX;
             //     if (gap > 1) {
@@ -185,9 +192,10 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
             maxSpanX = std::max(maxSpanX, newSpan.spanMaxX);
         }
 
-        if (newSpan.type == DIRECTION_UP) {
+        uint32_t t = newSpan.GetType();
+        if (t == DIRECTION_UP) {
             backdrop++;
-        } else if(newSpan.type == DIRECTION_DOWN) {
+        } else if(t == DIRECTION_DOWN) {
             backdrop--;
         }
     }
@@ -215,13 +223,12 @@ void TraverseGrid2(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVe
         Span span;
         span.key = PackPosition(spanMinX, spanTileY);
         span.lineStartIndex = spanLineStartIndex;
-        span.lineEndIndex = i - 1;
+        span.PackTypeLineEndIndex(0, i - 1);
         span.spanMaxX = spanMaxX;
-        span.type = 0;
 
         // if we didn't exit the current span we dont need to update 
-        if (contourId < spans.size() && spans[contourId].type == spanEntryDirection) {
-            spans[contourId].type = spanEntryDirection;
+        if (contourId < spans.size() && spans[contourId].GetType() == spanEntryDirection) {
+            spans[contourId].SetType(spanEntryDirection);
         }
         
         spans.push_back(span);
@@ -265,16 +272,14 @@ void TraverseGrid2(uint32_t workStartIndex, const std::vector<VPathVerb>& flatVe
                 Span span;
                 span.key = PackPosition(spanMinX, spanTileY);
                 span.lineStartIndex = spanLineStartIndex;
-                span.lineEndIndex = i;
                 span.spanMaxX = spanMaxX;
 
                 uint32_t type = downward ? DIRECTION_DOWN : DIRECTION_UP;
                 if (type == spanEntryDirection || spanEntryDirection == ~0u) {
-                    span.type = type;
+                    span.PackTypeLineEndIndex(type, i);
                 } else {
-                    span.type = 0;
+                    span.PackTypeLineEndIndex(0, i);
                 }
-
                 spans.push_back(span);
                 spanLineStartIndex = i;                    
                 spanEntryDirection = type;    
@@ -322,7 +327,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("/Users/alexandervestin/prog/modern-webgpu-sort/paper-1.svg");
+    std::ifstream t("/Users/alexandervestin/prog/modern-webgpu-sort/paris-30k.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -340,7 +345,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 4000;
+    uint32_t iterations = 10000;
 
     uint32_t flatPointsAllocation = 1 << 20;
     uint32_t spansAllocation = 1 << 19;
@@ -409,8 +414,8 @@ int main() {
             MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);
         }
 
-        renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
-        renderer.Render(atlasIndices.size(), drawSpans.size());
+        // renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices);
+        // renderer.Render(atlasIndices.size(), drawSpans.size());
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
@@ -418,7 +423,6 @@ int main() {
         avgTime += ms_double.count();
         // std::cout << flatPoints.size() << " " << spans.size() << std::endl;
         // std::cout << atlasManager.UsedSpace() << std::endl;
-
         // std::cout << flatPoints.size() * 8 << " b" << std::endl;
     }
 
