@@ -335,7 +335,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("/Users/alexandervestin/prog/modern-webgpu-sort/boston.svg");
+    std::ifstream t("paper-1.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -345,7 +345,7 @@ int main() {
     buffer << t.rdbuf();
     auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
 
-    const float transform[6] = {2.0, 0.0, 0.0, 2.0, 0.0, 0.0};
+    const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
     // auto elements = TestElements();
 
