@@ -31,7 +31,6 @@ static std::array<uint8_t, IMAGE_WIDTH * IMAGE_HEIGHT> outAtlas = {};
 
 const wgpu::TextureFormat atlasFormat = wgpu::TextureFormat::R32Float;
 
-
 std::string ReadTextFile(const std::string& path) {
     std::ifstream t(path.c_str());
     
@@ -147,31 +146,39 @@ wgpu::Texture Renderer::CreateTexture(const wgpu::TextureFormat format) const {
 }
 
 void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
+    if (atlasIndices + drawSpans == 0u) {
+        return;
+    }
+
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
-    utils::ComboRenderPassDescriptor atlasPassDescriptor({atlasTextureView});
-    atlasPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
-    atlasPassDescriptor.cColorAttachments[0].storeOp = wgpu::StoreOp::Store;
-    wgpu::RenderPassEncoder atlasPass = encoder.BeginRenderPass(&atlasPassDescriptor);
-    atlasPass.SetBindGroup(0, bindGroup);
-    atlasPass.SetPipeline(atlasPipeline);
-    atlasPass.Draw(atlasIndices * 6u);
-    atlasPass.End();
+    if(atlasIndices > 0u) {
+        utils::ComboRenderPassDescriptor atlasPassDescriptor({atlasTextureView});
+        atlasPassDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
+        atlasPassDescriptor.cColorAttachments[0].storeOp = wgpu::StoreOp::Store;
+        wgpu::RenderPassEncoder atlasPass = encoder.BeginRenderPass(&atlasPassDescriptor);
+        atlasPass.SetBindGroup(0, bindGroup);
+        atlasPass.SetPipeline(atlasPipeline);
+        atlasPass.Draw(atlasIndices * 6u);
+        atlasPass.End();
+    }
 
-    utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
-    drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
-    wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
-    drawPass.SetBindGroup(0, bindGroup);
-    drawPass.SetBindGroup(1, atlasBindGroup);
-    drawPass.SetPipeline(drawPipeline);
-    drawPass.Draw(drawSpans * 6u);
-    drawPass.End();
+    if (drawSpans > 0u) {
+        utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
+        drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
+        wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
+        drawPass.SetBindGroup(0, bindGroup);
+        drawPass.SetBindGroup(1, atlasBindGroup);
+        drawPass.SetPipeline(drawPipeline);
+        drawPass.Draw(drawSpans * 6u);
+        drawPass.End();
+    }
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
     // utils::BusyWaitDevice(device);
     // WriteAtlasTexture();
-    WriteColorTexture();
+    // WriteColorTexture();
 }
 
 void Renderer::WriteColorTexture() const {

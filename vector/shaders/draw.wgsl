@@ -3,7 +3,7 @@ const PI = 3.14159265359;
 const TWO_PI = 6.28318530718;
 const TWO_PI_QUANT = (1.0 / TWO_PI) * 255.0;
 const TILE_SIZE = 8.0;
-const LINES_PER_QUAD = 8u;
+const LINES_PER_QUAD = 2000u;
 
 const view_step = vec2f(1.0) / vec2f(1920.0, 1080.0);
 const sqrt_of_half = 0.7071067811865475;
@@ -178,8 +178,8 @@ fn frag_main(
     let xy = pos.xy - vec2f(0.5);
     let start = info.x & 0xffffffu;
     let cnt = info.x >> 24u;
-    var a = textureSample(atlas_texture, atlas_sampler, uv).x;
-    for (var i = 0u; i < 8u; i++) {
+    var a = 0.0; //textureSample(atlas_texture, atlas_sampler, uv).x;
+    for (var i = 0u; i < cnt; i++) {
         let index = line_indices[start + i];
         let p0 = points[index - 1u];
         let p1 = points[index];
