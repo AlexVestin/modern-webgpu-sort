@@ -267,7 +267,9 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const std::ve
             float ymax = std::max(p0.y, p1.y);
 
             float xv0 = p0.x;
-            float xv1 = p0.x + (std::clamp(static_cast<float>(spanTileY + offset), ymin, ymax) - p0.y) * slope; 
+
+            float test = static_cast<float>(spanTileY + offset);
+            float xv1 = p0.x + (std::clamp(test, ymin, ymax) - p0.y) * slope; 
 
             spanMaxX = std::max(spanMaxX, xv1);
             spanMinX = std::min(spanMinX, xv1);
@@ -296,12 +298,14 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const std::ve
                 spanTileY = yc;
 
                 xv0 = xv1;
-                xv1 = p0.x + (std::clamp(static_cast<float>(yc + offset), ymin, ymax) - p0.y) * slope; 
+                // xv1 = std::clamp(xv0 + slope * static_cast<float>(step), std::min(p0.x, p1.x), std::max(p0.x, p1.x));
+                xv1 = p0.x + (std::clamp(test, ymin, ymax) - p0.y) * slope; 
 
                 spanMinX = std::min(xv0, xv1);
                 spanMaxX = std::max(xv0, xv1);
                 
                 yc += step;
+                test += static_cast<float>(step);
             }
         } else {
             EmitClose(i);
@@ -335,7 +339,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("paper-1.svg");
+    std::ifstream t("paris-30k.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -353,7 +357,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 10000;
+    uint32_t iterations = 1000;
 
     uint32_t flatPointsAllocation = 1 << 20;
     uint32_t spansAllocation = 1 << 19;
@@ -364,6 +368,7 @@ int main() {
     // CPU Local 
     std::vector<VPathVerb> flatVerbs;
     std::vector<Span> spans;
+    // BitArray flatVerbs;
 
     // GPU buffers
     std::vector<VPoint> flatPoints;
@@ -401,34 +406,34 @@ int main() {
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
         h_start = std::chrono::high_resolution_clock::now();
         
-        uint32_t baseLineIndex = 0u;
+        uint32_t lineBaseIndex = 0u;
         for (int i = 0; i < elements.size(); i++) {
             const auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
             const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
             
-            uint32_t flatStartIndex = baseLineIndex;
-            baseLineIndex = FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f, baseLineIndex);
-            uint32_t spanStartIndex = spans.size();
-            TraverseGrid2(flatStartIndex, baseLineIndex, flatVerbs, flatPoints, spans);
-            std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
-                return s0.key < s1.key;
-            });
-            uint32_t drawSpansStartIndex = drawSpans.size();
-            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
-            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-                    el.paint.GetFillColor().GetU8ABGR();
+            uint32_t flatStartIndex = lineBaseIndex;
+            lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f, lineBaseIndex);
+            // uint32_t spanStartIndex = spans.size();
+            // TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPoints, spans);
+            // std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+            //     return s0.key < s1.key;
+            // });
+            // uint32_t drawSpansStartIndex = drawSpans.size();
+            // MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
+            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+            //         el.paint.GetFillColor().GetU8ABGR();
         }
 
-        renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices, baseLineIndex);
-        renderer.Render(atlasIndices.size(), drawSpans.size());
+        // renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices, lineBaseIndex);
+        // renderer.Render(atlasIndices.size(), drawSpans.size());
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
         avgTime += ms_double.count();
-        // std::cout << flatPoints.size() << " " << spans.size() << std::endl;
+        // std::cout << lineBaseIndex << " " << spans.size() << std::endl;
         // std::cout << atlasManager.UsedSpace() << std::endl;
         // std::cout << flatPoints.size() * 8 << " b" << std::endl;
     }

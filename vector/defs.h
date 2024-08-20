@@ -1,15 +1,38 @@
 #pragma once
 
 #include <inttypes.h>
+#include <vector>
 
 const uint32_t IMAGE_WIDTH = 1920;
 const uint32_t IMAGE_HEIGHT = 1080;
 const uint32_t DIRECTION_UP  = 1u;
 const uint32_t DIRECTION_DOWN = 2u;
-const uint32_t TILE_SIZE = 32u;
+const uint32_t TILE_SIZE = 16u;
 
 const float TILE_SIZE_DIV = 1.0f / static_cast<float>(TILE_SIZE);
 const uint32_t linesPerQuad = 2000u;
+
+struct BitArray {
+    void Reserve(uint32_t numBits) {
+        values.resize((numBits + 31u) / 32u);
+    }
+
+    void Clear(uint32_t size) {
+        for (int i = 0; i < (size + 31u) / 32u; i++) {
+            values[i] = 0u;
+        }
+    }
+
+    void SetBit(uint32_t index) {
+        values[index >> 5u] |= (1u << (index & 31u));
+    }
+
+    bool IsBitSet(uint32_t index) {
+        return (values[index >> 5u] & (1u << (index & 31u))) != 0u;
+    }
+ 
+    std::vector<uint32_t> values;
+};
 
 struct Span {
     uint32_t key; // y 16 bits, x 16 bits 
