@@ -2,7 +2,7 @@
 #include "Flatten.h"
 
 const float sqrt_of_8 = 2.82842712475f;
-const float sqrt_of_8_tol = 2.82842712475f * 0.175f;
+const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
 
 
 // y is in range [0, height - TILE_SIZE]
@@ -610,9 +610,9 @@ uint32_t FlattenCommands2(
                 VPoint b = 3.0f * (p0 - 2.0f * c0 + c1);
 
                 float conc = std::max(b.Length(), (a + b).Length());
-                // float dt = std::sqrt(sqrt_of_8_tol / conc);
-                float dt0 = std::sqrt(sqrt_of_8_tol / conc);
-                float dt = 1.0 / std::ceil(1.0 / dt0);
+                float dt = std::sqrt(sqrt_of_8_tol / conc);
+                // float dt0 = std::sqrt(sqrt_of_8_tol / conc);
+                // float dt = 1.0 / std::ceil(1.0 / dt0);
                 float t = dt;
 
                 // // http://www.pennelynn.com/Documents/CUJ/HTML/15.11/BARTLEY/BARTLEY.HTM
@@ -628,7 +628,7 @@ uint32_t FlattenCommands2(
                 VPoint dddf = 6.0f * adt3;
                 VPoint ddf = dddf + 2.0f * bdt2;
                 
-                while (t <= 1.0f - dt + 1.0e-4) {
+                while (t < 1.0f) {
                     f = f + df;
                     df = df + ddf;
                     ddf = ddf + dddf;

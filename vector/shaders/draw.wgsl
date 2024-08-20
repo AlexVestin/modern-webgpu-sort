@@ -21,8 +21,8 @@ struct DrawSpan {
     line_start_index: u32,
     line_end_index: u32,
     path_id: u32,
-    atlas_position: u32,
-    padding: u32,
+    // atlas_position: u32,
+    // padding: u32,
 };
 
 fn unpack_position(v: u32) -> vec2f {
@@ -142,22 +142,22 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     //     out.heights1[i >> 1u] = (h << ((i & 1u) * 16u));
     // }
 
-    let atl_tl = unpack_position(draw_span.atlas_position);
-    let atl_min_x  = atl_tl.x;
-    let atl_min_y  = atl_tl.y;
-    let atl_max_x  = atl_min_x + width;
-    let atl_max_y  = atl_min_y + TILE_SIZE;
+    // let atl_tl = unpack_position(draw_span.atlas_position);
+    // let atl_min_x  = atl_tl.x;
+    // let atl_min_y  = atl_tl.y;
+    // let atl_max_x  = atl_min_x + width;
+    // let atl_max_y  = atl_min_y + TILE_SIZE;
 
-    var atlas_pos = array(
-        vec2(atl_min_x, atl_min_y), // tr0 tl
-        vec2(atl_max_x, atl_min_y), // tr0 tr
-        vec2(atl_max_x, atl_max_y), // tr0 br
-        vec2(atl_min_x, atl_min_y), // tr1 tl
-        vec2(atl_max_x, atl_max_y), // tr1 br
-        vec2(atl_min_x, atl_max_y), // tr1 bl
-    );
+    // var atlas_pos = array(
+    //     vec2(atl_min_x, atl_min_y), // tr0 tl
+    //     vec2(atl_max_x, atl_min_y), // tr0 tr
+    //     vec2(atl_max_x, atl_max_y), // tr0 br
+    //     vec2(atl_min_x, atl_min_y), // tr1 tl
+    //     vec2(atl_max_x, atl_max_y), // tr1 br
+    //     vec2(atl_min_x, atl_max_y), // tr1 bl
+    // );
 
-    out.uv = atlas_pos[vertex_id] * view_step;
+    // out.uv = atlas_pos[vertex_id] * view_step;
     let count = min(draw_span.line_end_index - draw_span.line_start_index, LINES_PER_QUAD);
     out.info.x = draw_span.line_start_index | (count  << 24u);
     out.info.y = colors[draw_span.path_id & 0xffffu];

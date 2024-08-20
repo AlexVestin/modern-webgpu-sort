@@ -257,47 +257,47 @@ float Area(const VPoint& p0, const VPoint& p1, const VPoint& xy) {
 
 void RenderToAtlas2(const std::vector<DrawSpan>& spans, const std::vector<uint32_t>& indices, const std::vector<VPoint>& flatLinePoints, const std::vector<uint32_t>& atlasIndices) {
 
-    for (auto& atlasIndex: atlasIndices) {
-        uint32_t it = atlasIndex >> 24u;
-        uint32_t spanIndex = atlasIndex & 0xffffffu;
-        const auto& span = spans[spanIndex];
+    // for (auto& atlasIndex: atlasIndices) {
+    //     uint32_t it = atlasIndex >> 24u;
+    //     uint32_t spanIndex = atlasIndex & 0xffffffu;
+    //     const auto& span = spans[spanIndex];
         
-        uint32_t mx = span.pathId >> 16u;
+    //     uint32_t mx = span.pathId >> 16u;
         
-        uint32_t tl_x = span.position & 0xffffu;
-        uint32_t tl_y = span.position >> 16u;
+    //     uint32_t tl_x = span.position & 0xffffu;
+    //     uint32_t tl_y = span.position >> 16u;
         
-        uint32_t atlasX = span.atlasPosition & 0xffffu;
-        uint32_t atlasY = span.atlasPosition >> 16u;
+    //     uint32_t atlasX = span.atlasPosition & 0xffffu;
+    //     uint32_t atlasY = span.atlasPosition >> 16u;
 
-        uint32_t width = mx - tl_x;
+    //     uint32_t width = mx - tl_x;
 
 
-        uint32_t offset = (it + 1u) * linesPerQuad;
-        uint32_t startIndex = span.lineStartIndex + offset;
-        uint32_t endIndex = std::min(startIndex + linesPerQuad, span.lineEndIndex);
+    //     uint32_t offset = (it + 1u) * linesPerQuad;
+    //     uint32_t startIndex = span.lineStartIndex + offset;
+    //     uint32_t endIndex = std::min(startIndex + linesPerQuad, span.lineEndIndex);
 
-        for (int y = 0; y < TILE_SIZE; y++) {
-            if (y + atlasY >= IMAGE_HEIGHT) {
-                break;
-            }
-            for (int x = 0; x < width; x++) {
-                if (x + atlasX >= IMAGE_WIDTH) {
-                    break;
-                }
-                float area = 0.0f;
-                uint32_t pixelIndex = (atlasY + y) * IMAGE_WIDTH + (atlasX + x);
-                for (int i = startIndex; i < endIndex; i++) {
-                    uint32_t index = indices[i];
-                    const VPoint& p0 = flatLinePoints[index - 1u];
-                    const VPoint& p1 = flatLinePoints[index];
-                    area += Area(p0, p1, VPoint::Make(tl_x + x, tl_y + y));
-                }
+    //     for (int y = 0; y < TILE_SIZE; y++) {
+    //         if (y + atlasY >= IMAGE_HEIGHT) {
+    //             break;
+    //         }
+    //         for (int x = 0; x < width; x++) {
+    //             if (x + atlasX >= IMAGE_WIDTH) {
+    //                 break;
+    //             }
+    //             float area = 0.0f;
+    //             uint32_t pixelIndex = (atlasY + y) * IMAGE_WIDTH + (atlasX + x);
+    //             for (int i = startIndex; i < endIndex; i++) {
+    //                 uint32_t index = indices[i];
+    //                 const VPoint& p0 = flatLinePoints[index - 1u];
+    //                 const VPoint& p1 = flatLinePoints[index];
+    //                 area += Area(p0, p1, VPoint::Make(tl_x + x, tl_y + y));
+    //             }
 
-                atlas[pixelIndex] = area;
-            }        
-        }
-    }
+    //             atlas[pixelIndex] = area;
+    //         }        
+    //     }
+    // }
 }
 
 
@@ -313,8 +313,8 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
         uint32_t tl_x = span.position & 0xffffu;
         uint32_t tl_y = span.position >> 16u;
 
-        uint32_t atl_tl_x = span.atlasPosition & 0xffffu;
-        uint32_t atl_tl_y = span.atlasPosition >> 16u;
+        // uint32_t atl_tl_x = span.atlasPosition & 0xffffu;
+        // uint32_t atl_tl_y = span.atlasPosition >> 16u;
 
         uint32_t width = mx - tl_x;
 
@@ -331,10 +331,10 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
                 
                 float area = 0.0f;
                 uint32_t count = span.lineEndIndex - span.lineStartIndex;
-                if (count > linesPerQuad) {
-                    uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x + cx;
-                    area += atlas[atlasIndex];
-                } 
+                // if (count > linesPerQuad) {
+                //     uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x + cx;
+                //     area += atlas[atlasIndex];
+                // } 
 
                 for (int i = 0; i < std::min(count, linesPerQuad); i++) {
                     uint32_t lineIndex = indices[span.lineStartIndex + i];

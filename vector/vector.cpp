@@ -30,8 +30,7 @@ static inline int2 UnpackPosition(uint32_t v) {
 }
 
 static inline int32_t RoundDownToTile(float v) {
-    int32_t intV = static_cast<int32_t>(std::floor(v));
-    return intV - (intV & (TILE_SIZE - 1u));
+    return static_cast<int32_t>(v * TILE_SIZE_DIV) * TILE_SIZE;
 }
 
 
@@ -124,16 +123,16 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
 
         uint32_t spanLineCount = ds.lineEndIndex - ds.lineStartIndex;
         
-        if (spanLineCount > linesPerQuad) {
-            uint2 atlasPosition;
-            atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
-            ds.atlasPosition = PackPosition(atlasPosition.x, atlasPosition.y);   
+        // if (spanLineCount > linesPerQuad) {
+        //     uint2 atlasPosition;
+        //     atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
+        //     ds.atlasPosition = PackPosition(atlasPosition.x, atlasPosition.y);   
 
-            uint32_t lim = ComputeUtil::div_up(spanLineCount, linesPerQuad) - 1u;
-            for (int i = 0; i < lim; i++) {
-                atlasIndices.push_back(drawSpans.size() | (i << 24u));
-            }
-        } 
+        //     uint32_t lim = ComputeUtil::div_up(spanLineCount, linesPerQuad) - 1u;
+        //     for (int i = 0; i < lim; i++) {
+        //         atlasIndices.push_back(drawSpans.size() | (i << 24u));
+        //     }
+        // } 
         // else if(spanLineCount == 0u) {
         //     const uint2& edgePosition = atlasManager.GetLastEdgePosition();
         //     ds.atlasPosition = (edgePosition.y << 16u) | edgePosition.x;
@@ -250,11 +249,18 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
         const VPoint& p0 = last;
         const VPoint& p1 = flatPoints[i];
         
-        if (!flatVerbs.IsBitSet(i)) {
+        if (!flatVerbs.IsBitSet(i)) [[likely]] {
             // Horizontal lines
             if (p1.y >= spanTileY && p1.y < spanTileY + TILE_SIZE) {
                 spanMaxX = std::max(spanMaxX, p1.x);
                 spanMinX = std::min(spanMinX, p1.x);
+                last = p1;
+                continue;
+            }
+
+            int32_t y1 = RoundDownToTile(p1.y);
+            if (spanTileY < 0 && p1.y < 0) {
+                spanTileY = y1;
                 last = p1;
                 continue;
             }
@@ -268,30 +274,28 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
             float ymax = std::max(p0.y, p1.y);
 
             float xv0 = p0.x;
-
-            float test = static_cast<float>(spanTileY + offset);
-            float xv1 = p0.x + (std::clamp(test, ymin, ymax) - p0.y) * slope; 
+            float xv1 = p0.x + (std::clamp(static_cast<float>(spanTileY + offset), ymin, ymax) - p0.y) * slope;
 
             spanMaxX = std::max(spanMaxX, xv1);
             spanMinX = std::min(spanMinX, xv1);
             
-            int32_t yc = spanTileY + step;       
-            int32_t y1 = RoundDownToTile(p1.y);
+            int32_t yc = spanTileY + step;      
 
+            uint32_t type = downward ? DIRECTION_DOWN : DIRECTION_UP;
             while (yc != y1 + step) {
-                // Push span
-                Span span;
-                span.key = PackPosition(spanMinX, spanTileY);
-                span.lineStartIndex = spanLineStartIndex;
-                span.spanMaxX = spanMaxX;
+                if (spanTileY >= 0 && spanTileY < IMAGE_HEIGHT && spanMinX < IMAGE_WIDTH && spanMaxX >= 0.0) {
+                    Span span;
+                    span.key = PackPosition(spanMinX, spanTileY);
+                    span.lineStartIndex = spanLineStartIndex;
+                    span.spanMaxX = spanMaxX;
 
-                uint32_t type = downward ? DIRECTION_DOWN : DIRECTION_UP;
-                if (type == spanEntryDirection || spanEntryDirection == ~0u) {
-                    span.PackTypeLineEndIndex(type, i);
-                } else {
-                    span.PackTypeLineEndIndex(0, i);
+                    if (type == spanEntryDirection || spanEntryDirection == ~0u) {
+                        span.PackTypeLineEndIndex(type, i);
+                    } else {
+                        span.PackTypeLineEndIndex(0, i);
+                    }
+                    spans.push_back(span);
                 }
-                spans.push_back(span);
 
                 // Update counters
                 spanLineStartIndex = i;                    
@@ -299,14 +303,12 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
                 spanTileY = yc;
 
                 xv0 = xv1;
-                // xv1 = std::clamp(xv0 + slope * static_cast<float>(step), std::min(p0.x, p1.x), std::max(p0.x, p1.x));
-                xv1 = p0.x + (std::clamp(test, ymin, ymax) - p0.y) * slope; 
+                xv1 = p0.x + (std::clamp(static_cast<float>(yc + offset), ymin, ymax) - p0.y) * slope;
 
                 spanMinX = std::min(xv0, xv1);
                 spanMaxX = std::max(xv0, xv1);
                 
                 yc += step;
-                test += static_cast<float>(step);
             }
         } else {
             EmitClose(i);
@@ -340,7 +342,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("paper-1.svg");
+    std::ifstream t("paris-30k.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -358,7 +360,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 1000;
+    uint32_t iterations = 10000;
 
     uint32_t flatPointsAllocation = 1 << 21;
     uint32_t spansAllocation = 1 << 19;

@@ -76,6 +76,6 @@ struct DrawSpan {
     uint32_t lineStartIndex;
     uint32_t lineEndIndex;
     uint32_t pathId;
-    uint32_t atlasPosition;
-    uint32_t padding;
+    // uint32_t atlasPosition;
+    // uint32_t padding;
 };
