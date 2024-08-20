@@ -2,7 +2,7 @@
 #include "Flatten.h"
 
 const float sqrt_of_8 = 2.82842712475f;
-const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
+const float sqrt_of_8_tol = 2.82842712475f * 0.175f;
 
 
 // y is in range [0, height - TILE_SIZE]
@@ -549,7 +549,7 @@ uint32_t FlattenCommandsCombined(
 uint32_t FlattenCommands2(
     const std::vector<VPathVerb>& verbs, 
     const std::vector<VPoint>& points, 
-    std::vector<VPathVerb>& outVerbs,
+    BitArray& outVerbs,
     std::vector<VPoint>& outPoints,
     const float tolerance,
     uint32_t baseLineIndex) {
@@ -559,7 +559,7 @@ uint32_t FlattenCommands2(
     
     uint32_t lineIndex = baseLineIndex;
     outPoints[lineIndex] = p0;
-    outVerbs[lineIndex++] = VPathVerb::kMove;
+    outVerbs.SetBit(lineIndex++);
 
     size_t i = 1;
     const float tolerance4  = tolerance * 4.0f;
@@ -567,24 +567,19 @@ uint32_t FlattenCommands2(
     for(int j = 1; j < verbs.size(); j++) {
         switch (verbs[j]) {
             case VPathVerb::kClose:
-                // outPoints.push_back(first);
-                // outVerbs.push_back(VPathVerb::kLine);
-
-                outPoints[lineIndex] = first;
-                outVerbs[lineIndex++] = VPathVerb::kLine;
+                outPoints[lineIndex++] = first;
                 break;
 
             case VPathVerb::kMove:
                 first = points[i];
                 p0 = first;
                 outPoints[lineIndex] = first;
-                outVerbs[lineIndex++] = VPathVerb::kMove;
+                outVerbs.SetBit(lineIndex++);
                 i++;
                 break;
             case VPathVerb::kLine:  {
                 const VPoint& line = points[i];
-                outPoints[lineIndex] = line;
-                outVerbs[lineIndex++] = VPathVerb::kLine;
+                outPoints[lineIndex++] = line;
                 p0 = line;
                 i++;
                 break;
@@ -597,16 +592,11 @@ uint32_t FlattenCommands2(
                 float dt = std::sqrt(tolerance4 / l);
                 float t = std::min(dt, 1.0f);
                 while (t < 1.0f) {
-                    outPoints[lineIndex] = evalQuadBez(p0, control, point, t);
-                    outVerbs[lineIndex++] = VPathVerb::kLine;
+                    outPoints[lineIndex++] = evalQuadBez(p0, control, point, t);
                     t += dt;
                 }
 
-                outPoints[lineIndex] = point;
-                outVerbs[lineIndex++] = VPathVerb::kLine;
- 
-
-                // QuadBezFlatten(_last, control, point, tolerance, outVerbs, outPoints);
+                outPoints[lineIndex++] = point;
                 p0 = point;
                 i += 2;
                 break;
@@ -643,14 +633,11 @@ uint32_t FlattenCommands2(
                     df = df + ddf;
                     ddf = ddf + dddf;
 
-                    outPoints[lineIndex] = f;
-                    outVerbs[lineIndex++] = VPathVerb::kLine;
+                    outPoints[lineIndex++] = f;
                     t += dt;
                 }
 
-                outPoints[lineIndex] = p1;
-                outVerbs[lineIndex++] = VPathVerb::kLine;
-                // CubicBezToQuadratics(_last, control1, control2, point, tolerance, outVerbs, outPoints);
+                outPoints[lineIndex++] = p1;
                 p0 = p1;
                 i += 3;
                 break;

@@ -14,7 +14,7 @@ struct FlatCommand {
 uint32_t FlattenCommands2(
     const std::vector<VPathVerb>& verbs, 
     const std::vector<VPoint>& points, 
-    std::vector<VPathVerb>& outVerbs,
+    BitArray& outVerbs,
     std::vector<VPoint>& outPoints,
     float tolerance,
     uint32_t baseLineIndex);

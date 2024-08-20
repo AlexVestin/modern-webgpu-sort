@@ -208,7 +208,7 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
     EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX);
 }
 
-void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const std::vector<VPathVerb>& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
+void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArray& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
     VPoint last = flatPoints[workStartIndex];
 
     int32_t spanTileY = RoundDownToTile(last.y);
@@ -249,7 +249,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const std::ve
         const VPoint& p0 = last;
         const VPoint& p1 = flatPoints[i];
         
-        if (flatVerbs[i] == VPathVerb::kLine) {
+        if (!flatVerbs.IsBitSet(i)) {
             // Horizontal lines
             if (p1.y >= spanTileY && p1.y < spanTileY + TILE_SIZE) {
                 spanMaxX = std::max(spanMaxX, p1.x);
