@@ -226,11 +226,6 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
         span.lineStartIndex = spanLineStartIndex;
         span.PackTypeLineEndIndex(0, i - 1);
         span.spanMaxX = spanMaxX;
-
-        // if we didn't exit the current span we dont need to update 
-        // if (contourId < spans.size() && spans[contourId].GetType() == spanEntryDirection) {
-        //     spans[contourId].SetType(spanEntryDirection);
-        // }
         if (contourId < spans.size()) {
             uint32_t contourType = spans[contourId].GetType();  
             
@@ -278,9 +273,8 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
 
             spanMaxX = std::max(spanMaxX, xv1);
             spanMinX = std::min(spanMinX, xv1);
-            
-            int32_t yc = spanTileY + step;      
 
+            int32_t yc = spanTileY + step;      
             uint32_t type = downward ? DIRECTION_DOWN : DIRECTION_UP;
             while (yc != y1 + step) {
                 if (spanTileY >= 0 && spanTileY < IMAGE_HEIGHT && spanMinX < IMAGE_WIDTH && spanMaxX >= 0.0) {
@@ -360,7 +354,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 10000;
+    uint32_t iterations = 2000;
 
     uint32_t flatPointsAllocation = 1 << 21;
     uint32_t spansAllocation = 1 << 19;

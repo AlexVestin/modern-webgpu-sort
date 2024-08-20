@@ -103,6 +103,8 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
                                     .bindGroupLayouts = {drawBindGroupLayout, atlasBindGroupLayout}},
                                     "DrawPipeline");
 
+
+    queryContainer.Init(device, 2);
 }
 
 void Renderer::InitDevice() {
@@ -145,11 +147,12 @@ wgpu::Texture Renderer::CreateTexture(const wgpu::TextureFormat format) const {
     return device.CreateTexture(&descriptor);
 }
 
-void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
+void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
     if (atlasIndices + drawSpans == 0u) {
         return;
     }
 
+    queryContainer.Reset();
     wgpu::CommandEncoder encoder = device.CreateCommandEncoder();
 
     if (atlasIndices > 0u) {
@@ -164,7 +167,13 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
     }
 
     if (drawSpans > 0u) {
+        wgpu::RenderPassTimestampWrites writes;
+        writes.beginningOfPassWriteIndex = 0;
+        writes.endOfPassWriteIndex = 1;
+        writes.querySet = queryContainer.querySet;
+
         utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
+        drawDescriptor.timestampWrites = &writes;
         drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
         wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
         drawPass.SetBindGroup(0, bindGroup);
@@ -172,10 +181,17 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) const {
         drawPass.SetPipeline(drawPipeline);
         drawPass.Draw(drawSpans * 6u);
         drawPass.End();
+
+        queryContainer.Resolve(encoder);
     }
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
+
+    utils::BusyWaitDevice(device);
+    queryContainer.Read(device);
+
+    std::cout << queryContainer.GetTotal() << std::endl;
     // utils::BusyWaitDevice(device);
     // WriteAtlasTexture();
     // WriteColorTexture();

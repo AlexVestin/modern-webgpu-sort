@@ -17,6 +17,63 @@ static const wgpu::BufferUsage copyDstUsage = storageUsage | wgpu::BufferUsage::
 static const wgpu::BufferUsage copySrcUsage = storageUsage | wgpu::BufferUsage::CopySrc;
 static const wgpu::BufferUsage copyAllUsage = copySrcUsage | copyDstUsage;
 
+struct QueryContainer {
+    void Init(const wgpu::Device& device, uint32_t numQueries) {
+        this->numQueries = numQueries;
+
+        buffer = utils::CreateBuffer(
+            device, numQueries * sizeof(uint64_t),
+            wgpu::BufferUsage::Storage | wgpu::BufferUsage::CopySrc | wgpu::BufferUsage::QueryResolve, "QuerySet");
+
+        wgpu::QuerySetDescriptor querySetDescriptor;
+        querySetDescriptor.count = numQueries;
+        querySetDescriptor.label = "ComputeTime";
+        querySetDescriptor.type = wgpu::QueryType::Timestamp;
+        querySet = device.CreateQuerySet(&querySetDescriptor);
+
+        gpu_times.resize(numQueries / 2u);
+    }
+
+    void Resolve(const wgpu::CommandEncoder& encoder) const {
+        encoder.ResolveQuerySet(querySet, 0, numQueries, buffer, 0);
+    }
+
+    void Read(const wgpu::Device& device) {
+        std::vector<uint64_t> queryData =
+            ComputeUtil::CopyReadBackBuffer<uint64_t>(device, buffer, numQueries * sizeof(uint64_t));
+
+        for (int i = 0; i < numQueries / 2; i++) {
+            uint64_t t0 = queryData[i * 2];
+            uint64_t t1 = queryData[i * 2 + 1];
+
+            std::cout << "queries: " << t0 << " " << t1 << " " << t0 - t1  << std::endl;
+            gpu_times[i] += t1 - t0;
+        }
+    }
+
+    const std::vector<uint64_t>& GetTimings() const { return gpu_times; }
+
+    uint64_t GetTotal() const {
+        uint64_t total = 0u;
+        for (int i = 0; i < numQueries; i++) {
+            
+            total += gpu_times[i];
+        }
+        return total;
+    }
+
+    void Reset() {
+        for (int i = 0; i < gpu_times.size(); i++) {
+            gpu_times[i] = 0u;
+        }
+    }
+
+    std::vector<uint64_t> gpu_times;
+    uint32_t numQueries;
+    wgpu::Buffer buffer;
+    wgpu::QuerySet querySet;
+};
+
 class Renderer {
 public:
     Renderer(uint32_t atlasWidth, uint32_t atlasHeight);
@@ -26,7 +83,7 @@ public:
 
     wgpu::Texture CreateTexture(const wgpu::TextureFormat format) const;
 
-    void Render(uint32_t atlasIndices, uint32_t drawSpans) const;
+    void Render(uint32_t atlasIndices, uint32_t drawSpans);
 
     void WriteAtlasTexture() const;
     void WriteColorTexture() const;
@@ -91,4 +148,6 @@ private:
     uint32_t atlasHeight;
 
     uint32_t uploadAmount = 0u;
+
+    QueryContainer queryContainer;
 };
