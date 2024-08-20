@@ -30,7 +30,8 @@ static inline int2 UnpackPosition(uint32_t v) {
 }
 
 static inline int32_t RoundDownToTile(float v) {
-    return static_cast<int32_t>(v * TILE_SIZE_DIV) * TILE_SIZE;
+    int32_t intV = static_cast<int32_t>(std::floor(v));
+    return intV - (intV & (TILE_SIZE - 1u));
 }
 
 
@@ -339,7 +340,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("paris-30k.svg");
+    std::ifstream t("paper-1.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -366,9 +367,9 @@ int main() {
     uint32_t atlasIndicesAllocation = 1 << 19;
 
     // CPU Local 
-    std::vector<VPathVerb> flatVerbs;
+    // std::vector<VPathVerb> flatVerbs;
     std::vector<Span> spans;
-    // BitArray flatVerbs;
+    BitArray flatVerbs;
 
     // GPU buffers
     std::vector<VPoint> flatPoints;
@@ -377,7 +378,7 @@ int main() {
     std::vector<uint32_t> atlasIndices;
 
     for (int j = 0; j < iterations; j++) {
-        
+        h_start = std::chrono::high_resolution_clock::now();
         flatPoints.clear();
         flatVerbs.clear();
         spans.clear();
@@ -393,7 +394,7 @@ int main() {
         atlasIndices.reserve(atlasIndicesAllocation);
     
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
-        h_start = std::chrono::high_resolution_clock::now();
+        
         
         uint32_t lineBaseIndex = 0u;
         for (int i = 0; i < elements.size(); i++) {
@@ -415,8 +416,8 @@ int main() {
                     el.paint.GetFillColor().GetU8ABGR();
         }
 
-        // renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices, lineBaseIndex);
-        // renderer.Render(atlasIndices.size(), drawSpans.size());
+        renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices, lineBaseIndex);
+        renderer.Render(atlasIndices.size(), drawSpans.size());
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
