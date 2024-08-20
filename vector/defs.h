@@ -13,24 +13,33 @@ const float TILE_SIZE_DIV = 1.0f / static_cast<float>(TILE_SIZE);
 const uint32_t linesPerQuad = 2000u;
 
 struct BitArray {
-    void Reserve(uint32_t numBits) {
-        values.resize((numBits + 31u) / 32u);
+    void reserve(uint32_t numBits) {
+        uint32_t lastCapacicty = values.capacity();
+
+        uint32_t valuesNeeded = (numBits + 31u) >> 5u;
+        values.reserve(valuesNeeded + (valuesNeeded & 3u));
+        // Zero initialize
+
+        std::fill(values.begin() + lastCapacicty, values.begin() + values.capacity(), 0);
     }
 
-    void Clear(uint32_t size) {
-        for (int i = 0; i < (size + 31u) / 32u; i++) {
-            values[i] = 0u;
-        }
+    void clear() {
+        uint32_t valuesNeeded = (maxIndexBitSet + 31u) >> 5u;
+        std::fill(values.begin(), values.begin() + valuesNeeded, 0);
+        maxIndexBitSet = 0u;
     }
 
-    void SetBit(uint32_t index) {
+    inline void SetBit(uint32_t index) {
         values[index >> 5u] |= (1u << (index & 31u));
+        maxIndexBitSet = std::max(maxIndexBitSet, index);
     }
 
-    bool IsBitSet(uint32_t index) {
-        return (values[index >> 5u] & (1u << (index & 31u))) != 0u;
+    inline bool IsBitSet(uint32_t index) const {
+        return values[index >> 5u] & (1u << (index & 31u));
     }
  
+ private:
+    uint32_t maxIndexBitSet = 0u;
     std::vector<uint32_t> values;
 };
 

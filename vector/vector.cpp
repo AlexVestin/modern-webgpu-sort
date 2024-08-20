@@ -359,7 +359,7 @@ int main() {
     double avgTime = 0.0f;
     uint32_t iterations = 1000;
 
-    uint32_t flatPointsAllocation = 1 << 20;
+    uint32_t flatPointsAllocation = 1 << 21;
     uint32_t spansAllocation = 1 << 19;
     uint32_t drawSpansAllocation = 1 << 19;
     uint32_t indicesAllocation = 1 << 19;
@@ -377,6 +377,7 @@ int main() {
     std::vector<uint32_t> atlasIndices;
 
     for (int j = 0; j < iterations; j++) {
+        
         flatPoints.clear();
         flatVerbs.clear();
         spans.clear();
@@ -384,23 +385,11 @@ int main() {
         indices.clear();
         atlasIndices.clear();
 
-        if (flatPointsAllocation > flatPoints.capacity()) {
-            flatPoints.reserve(flatPointsAllocation);
-            flatVerbs.reserve(flatPointsAllocation);
-        }
-        
-        if (spansAllocation > spans.capacity()) {
-            spans.reserve(spansAllocation);
-        }
-        
-        if (drawSpansAllocation > drawSpans.capacity()) {
-            drawSpans.reserve(drawSpansAllocation);
-        }
-
-        if (indicesAllocation > indices.capacity()) {
-            indices.reserve(indicesAllocation);
-        }
-
+        flatPoints.reserve(flatPointsAllocation);
+        flatVerbs.reserve(flatPointsAllocation);
+        spans.reserve(spansAllocation);
+        drawSpans.reserve(drawSpansAllocation);
+        indices.reserve(indicesAllocation);
         atlasIndices.reserve(atlasIndicesAllocation);
     
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
@@ -415,15 +404,15 @@ int main() {
             
             uint32_t flatStartIndex = lineBaseIndex;
             lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f, lineBaseIndex);
-            // uint32_t spanStartIndex = spans.size();
-            // TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPoints, spans);
-            // std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
-            //     return s0.key < s1.key;
-            // });
-            // uint32_t drawSpansStartIndex = drawSpans.size();
-            // MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
-            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-            //         el.paint.GetFillColor().GetU8ABGR();
+            uint32_t spanStartIndex = spans.size();
+            TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPoints, spans);
+            std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+                return s0.key < s1.key;
+            });
+            uint32_t drawSpansStartIndex = drawSpans.size();
+            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
+            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+                    el.paint.GetFillColor().GetU8ABGR();
         }
 
         // renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices, lineBaseIndex);
