@@ -9,12 +9,20 @@
 #include <deque>
 #include <list>
 
+#include <thread>
+
 #include "defs.h"
 #include "Validation.h"
 #include "Renderer.h"
 
 #include "Flatten.h"
 #include "path/SVGUtil.h"
+
+const uint32_t flatPointsAllocation = 1 << 16u;
+const uint32_t spansAllocation = 1 << 18;
+const uint32_t drawSpansAllocation = 1 << 18;
+const uint32_t indicesAllocation = 1 << 18;
+const uint32_t atlasIndicesAllocation = 1 << 18;
 
 Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
 
@@ -30,9 +38,21 @@ static inline int2 UnpackPosition(uint32_t v) {
 }
 
 static inline int32_t RoundDownToTile(float v) {
-    return static_cast<int32_t>(v * TILE_SIZE_DIV) * TILE_SIZE;
+    return static_cast<int32_t>(std::floor(v * TILE_SIZE_DIV)) * TILE_SIZE;
 }
 
+std::mutex doneMtx;
+std::mutex mtx;
+std::condition_variable cv_start, cv_done;
+std::atomic<int> counter = 0;
+uint32_t pointSum = 0u;
+std::atomic<bool> killThreads = false;
+std::atomic<int64_t> startIteration = -1;
+std::atomic<int64_t> copyIteration = -1;
+
+std::vector<std::atomic<uint32_t>> flatPointCounts(32);
+std::vector<std::atomic<uint32_t>> drawSpansCounts(32);
+std::vector<std::atomic<uint32_t>> lineIndicesCounts(32);
 
 struct AtlasManager {
     AtlasManager(uint32_t width, uint32_t height) : atlasWidth{width}, atlasHeight{height} { }
@@ -334,6 +354,128 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
     return { e };
 }
 
+void ThreadRun(uint32_t tid, uint32_t n, const std::vector<lyra::SVGUtil::Element>& elements) {
+    std::vector<VPoint> flatPoints;
+    std::vector<uint32_t> indices;
+    std::vector<DrawSpan> drawSpans;
+    std::vector<uint32_t> atlasIndices;
+    std::vector<Span> spans;
+    BitArray flatVerbs;
+
+    // TODO: retain
+    flatPoints.reserve(1u << 18u);
+    flatVerbs.reserve(1u << 18u);
+    spans.reserve(1u << 14u);
+    drawSpans.reserve(1u << 14u);
+    indices.reserve(1u << 14u);
+    // atlasIndices.reserve(1u << 1);
+
+    AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
+
+    std::chrono::high_resolution_clock::time_point h_start, h_end;
+
+    uint32_t myIteration = 0u;
+    while (true) {
+        // std::cout << "Waiting" << std::endl;
+        {
+            std::unique_lock<std::mutex> lk(mtx);
+            cv_start.wait(lk, [myIteration] { return myIteration == startIteration; });
+        }
+    
+        if (killThreads) {
+            break;
+        }
+
+        uint32_t slice = ComputeUtil::div_up(pointSum, n);
+        flatPoints.clear();
+        flatVerbs.clear();
+        spans.clear();
+        drawSpans.clear();
+        indices.clear();
+        atlasIndices.clear();
+
+
+        h_start = std::chrono::high_resolution_clock::now();
+        uint32_t lineBaseIndex = 0u;
+        uint32_t numPoints = 0u;
+        for (int i = 0; i < elements.size(); i++) {
+            const auto& el = elements[i];
+            auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
+            const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
+            if (numPoints < slice * tid) {
+                numPoints += points.size();
+                continue;
+            }
+
+            
+
+            const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
+            numPoints += points.size();
+            
+            uint32_t flatStartIndex = lineBaseIndex;
+            lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f, lineBaseIndex);
+            uint32_t spanStartIndex = spans.size();
+            TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPoints, spans);
+            std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+                return s0.key < s1.key;
+            });
+            uint32_t drawSpansStartIndex = drawSpans.size();
+            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
+            
+            if (numPoints >= (tid + 1) * slice) {
+                break;
+            } 
+        }
+
+        h_end = std::chrono::high_resolution_clock::now();
+        std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
+
+        for (int i = 0; i < n; i++) {
+            if (tid <= i) {
+                flatPointCounts[i].fetch_add(lineBaseIndex);
+                drawSpansCounts[i].fetch_add(drawSpans.size());
+                lineIndicesCounts[i].fetch_add(indices.size());
+            }
+        }
+
+        // std::cout << "tid: " << tid << " " << ms_double.count() << " " << numPoints << std::endl;
+        counter++;
+        if (counter.load() == n) {
+            {
+                std::unique_lock<std::mutex> lk(mtx);
+                cv_done.notify_one();
+            }
+        }
+
+        {
+            std::unique_lock<std::mutex> lk(mtx);
+            cv_start.wait(lk, [myIteration] { return myIteration == copyIteration; });
+        }
+
+        // Copy time
+
+        // if (tid == 0) {
+        //     for (int i = 0; i < flatPointCounts[0]; i++) flatPointsGlobal[i] = flatPoints[i];
+        //     for (int i = 0; i < lineIndicesCounts[0]; i++) indicesGlobal[i] = indices[i];
+        //     for (int i = 0; i < drawSpansCounts[0]; i++) drawSpansGlobal[i] = drawSpans[i];
+        // } else {
+        //     for (int i = flatPointCounts[tid - 1]; i < flatPointCounts[tid]; i++) flatPointsGlobal[i] = flatPoints[i - flatPointCounts[tid - 1]];
+        //     for (int i = lineIndicesCounts[tid - 1]; i < lineIndicesCounts[tid]; i++) indicesGlobal[i] = indices[i - lineIndicesCounts[tid - 1]];
+        //     for (int i = drawSpansCounts[tid - 1]; i < drawSpansCounts[tid]; i++) drawSpansGlobal[i] = drawSpans[i - drawSpansCounts[tid - 1]];
+        // }
+
+        counter++;
+        if (counter.load() == n) {
+            {
+                std::unique_lock<std::mutex> lk(mtx);
+                cv_done.notify_one();
+            }
+        }
+        
+        myIteration++;
+    }
+}   
+
 int main() {
     using std::chrono::milliseconds;
     std::ifstream t("paris-30k.svg");
@@ -356,73 +498,128 @@ int main() {
     double avgTime = 0.0f;
     uint32_t iterations = 2000;
 
-    uint32_t flatPointsAllocation = 1 << 21;
-    uint32_t spansAllocation = 1 << 19;
-    uint32_t drawSpansAllocation = 1 << 19;
-    uint32_t indicesAllocation = 1 << 19;
-    uint32_t atlasIndicesAllocation = 1 << 19;
-
     // CPU Local 
-    // std::vector<VPathVerb> flatVerbs;
     std::vector<Span> spans;
     BitArray flatVerbs;
-
-    // GPU buffers
-    std::vector<VPoint> flatPoints;
-    std::vector<uint32_t> indices;
-    std::vector<DrawSpan> drawSpans;
     std::vector<uint32_t> atlasIndices;
+
+
+    std::vector<VPoint> flatPointsGlobal;
+    std::vector<uint32_t> indicesGlobal;
+    std::vector<DrawSpan> drawSpansGlobal;
+
+    // std::vector<std::thread> threads(11);        
+    // for (uint32_t i = 0; i < threads.size(); i++) {
+    //     threads[i] = std::thread(&ThreadRun, i, threads.size(), std::cref(elements)); 
+    // }
+
 
     for (int j = 0; j < iterations; j++) {
         h_start = std::chrono::high_resolution_clock::now();
-        flatPoints.clear();
+
+        flatPointsGlobal.clear();
+        drawSpansGlobal.clear();
+        indicesGlobal.clear();
+
         flatVerbs.clear();
         spans.clear();
-        drawSpans.clear();
-        indices.clear();
         atlasIndices.clear();
 
-        flatPoints.reserve(flatPointsAllocation);
+        drawSpansGlobal.reserve(drawSpansAllocation);
+        indicesGlobal.reserve(indicesAllocation);
+        flatPointsGlobal.reserve(flatPointsAllocation);
+
         flatVerbs.reserve(flatPointsAllocation);
         spans.reserve(spansAllocation);
-        drawSpans.reserve(drawSpansAllocation);
-        indices.reserve(indicesAllocation);
         atlasIndices.reserve(atlasIndicesAllocation);
     
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
         
+
+        // for (int i = 0; i < threads.size(); i++) {
+        //     flatPointCounts[i] = 0u;
+        //     drawSpansCounts[i] = 0u;
+        //     lineIndicesCounts[i] = 0u;
+        // }
+
+        // pointSum = 0u;
+        // uint32_t ii = 0u;
+        // for (auto& el: elements) {
+        //     auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
+        //     pointSum += el.path.GetPoints(paintStyle).size();
+        //     colors[ii++] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+        //             el.paint.GetFillColor().GetU8ABGR();
+        // }
+        // {
+        //     std::lock_guard<std::mutex> lk(mtx);
+        //     startIteration = j;
+        //     counter = 0;  
+        // }
+        // cv_start.notify_all();
+        // {
+        //     std::unique_lock<std::mutex> lk(mtx);
+        //     cv_done.wait(lk, [n = threads.size()] { return counter == n; });
+        //     counter = 0;
+        //     // Make sure we have space
+        //     flatPointsGlobal.reserve(flatPointCounts[threads.size() - 1u]);
+        //     indicesGlobal.reserve(lineIndicesCounts[threads.size() - 1u]);
+        //     drawSpansGlobal.reserve(drawSpansCounts[threads.size() - 1u]);
+        //     copyIteration = j;
+        // }
+        // // start copy
+        // cv_start.notify_all();
+        // {
+        //     std::unique_lock<std::mutex> lk(mtx);
+        //     cv_done.wait(lk, [n = threads.size()] { return counter == n; });
+        //     // Copy should be done
+        // }
+
+        // uint32_t lineBaseIndex = flatPointCounts[threads.size() - 1u];
+        // uint32_t numDrawSpans = drawSpansCounts[threads.size() - 1u];
+        // uint32_t numIndices = lineIndicesCounts[threads.size() - 1u];
         
         uint32_t lineBaseIndex = 0u;
         for (int i = 0; i < elements.size(); i++) {
             const auto& el = elements[i];
             auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
             const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
-            const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
-            
+            const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle); 
             uint32_t flatStartIndex = lineBaseIndex;
-            lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f, lineBaseIndex);
+            lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPointsGlobal, 0.1f, lineBaseIndex);
             uint32_t spanStartIndex = spans.size();
-            TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPoints, spans);
+            TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPointsGlobal, spans);
             std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
                 return s0.key < s1.key;
             });
-            uint32_t drawSpansStartIndex = drawSpans.size();
-            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
+            uint32_t drawSpansStartIndex = flatPointsGlobal.size();
+            MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasManager, atlasIndices);                   
             colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
                     el.paint.GetFillColor().GetU8ABGR();
         }
+        uint32_t numDrawSpans = drawSpansGlobal.size();
+        uint32_t numIndices = indicesGlobal.size();
+        
+        
 
-        renderer.Upload(colors, flatPoints, indices, drawSpans, atlasIndices, lineBaseIndex);
-        renderer.Render(atlasIndices.size(), drawSpans.size());
+        renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+        renderer.Render(atlasIndices.size(), numDrawSpans);
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
         avgTime += ms_double.count();
-        // std::cout << lineBaseIndex << " " << spans.size() << std::endl;
-        // std::cout << atlasManager.UsedSpace() << std::endl;
-        // std::cout << flatPoints.size() * 8 << " b" << std::endl;
     }
+
+    // Notify all threads to start
+    // {
+    //     std::lock_guard<std::mutex> lk(mtx);
+    //     killThreads = true;
+    //     startIteration = iterations;
+    // }
+    // cv_start.notify_all();
+    // for (uint32_t i = 0; i < threads.size(); i++) {
+    //     threads[i].join();
+    // }
 
     renderer.Dispose();
 

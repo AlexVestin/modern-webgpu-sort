@@ -560,6 +560,9 @@ uint32_t FlattenCommands2(
     uint32_t lineIndex = baseLineIndex;
     outPoints[lineIndex] = p0;
     outVerbs.SetBit(lineIndex++);
+    
+
+    uint32_t nextCapacityCheckLevel = lineIndex + (lineIndex & 1023u);
 
     size_t i = 1;
     const float tolerance4  = tolerance * 4.0f;
@@ -648,6 +651,15 @@ uint32_t FlattenCommands2(
                           << std::endl;
                 exit(1);
             }
+        }
+
+
+        if (lineIndex >= nextCapacityCheckLevel) {
+            if (outPoints.capacity() - lineIndex <= (1u << 18u)) {
+               outPoints.reserve(outPoints.capacity() * 2);
+               outVerbs.reserve(outVerbs.capacity() * 2); 
+            }
+            nextCapacityCheckLevel += 1024u;
         }
     }
 

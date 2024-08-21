@@ -188,13 +188,14 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
 
-    utils::BusyWaitDevice(device);
-    queryContainer.Read(device);
+    // utils::BusyWaitDevice(device);
+    // queryContainer.Read(device);
 
-    std::cout << queryContainer.GetTotal() << std::endl;
+    // std::cout << queryContainer.GetTotal() << std::endl;
     // utils::BusyWaitDevice(device);
     // WriteAtlasTexture();
     // WriteColorTexture();
+
 }
 
 void Renderer::WriteColorTexture() const {
@@ -245,13 +246,15 @@ void Renderer::Upload(
     const std::vector<uint32_t>& indices,
     const std::vector<DrawSpan>& drawSpans,
     const std::vector<uint32_t>& atlasIndices,
-    uint32_t numFlatPoints) {
+    uint32_t numFlatPoints,
+    uint32_t numIndices,
+    uint32_t numDrawSpans) {
     uploadAmount = 0u;
     
     CreateOrUploadBuffer(device, &pathInfoBuffer, colors, colors.size(), "ColorBuffer");
-    CreateOrUploadBuffer(device, &lineIndexBuffer, indices, indices.size(), "LineIndexBuffer");
+    CreateOrUploadBuffer(device, &lineIndexBuffer, indices, numIndices, "LineIndexBuffer");
     CreateOrUploadBuffer(device, &flatLinePointBuffer, flatPoints, numFlatPoints, "FlatPointBuffer");
-    CreateOrUploadBuffer(device, &drawSpansBuffer, drawSpans, drawSpans.size(), "DrawSpansBuffer");
+    CreateOrUploadBuffer(device, &drawSpansBuffer, drawSpans, numDrawSpans, "DrawSpansBuffer");
     CreateOrUploadBuffer(device, &atlasIndicesBuffer, atlasIndices, atlasIndices.size(), "AtlasIndicesBuffer");
 
     if (needsRecreateBindGroup) {

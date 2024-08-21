@@ -110,7 +110,9 @@ public:
         const std::vector<uint32_t>& indices,
         const std::vector<DrawSpan>& drawSpans,
         const std::vector<uint32_t>& atlasIndices,
-        uint32_t numFlatPoints);
+        uint32_t numFlatPoints, 
+        uint32_t numIndices,
+        uint32_t numDrawSpans);
 
     void Dispose();
 

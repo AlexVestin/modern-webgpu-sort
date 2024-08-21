@@ -37,6 +37,10 @@ struct BitArray {
     inline bool IsBitSet(uint32_t index) const {
         return values[index >> 5u] & (1u << (index & 31u));
     }
+
+    inline uint32_t capacity() const {
+        return values.capacity() * 32u;
+    }
  
  private:
     uint32_t maxIndexBitSet = 0u;
