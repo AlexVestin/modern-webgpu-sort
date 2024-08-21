@@ -136,8 +136,8 @@ void Renderer::InitDevice() {
 
 wgpu::Texture Renderer::CreateTexture(const wgpu::TextureFormat format) const {
     wgpu::TextureDescriptor descriptor;
-    descriptor.size.width = 1920;
-    descriptor.size.height = 1080;
+    descriptor.size.width = IMAGE_WIDTH;
+    descriptor.size.height = IMAGE_HEIGHT;
     // descriptor.size.depthOrArrayLayers = ;
     descriptor.dimension = wgpu::TextureDimension::e2D;
     descriptor.sampleCount = 1;
@@ -167,13 +167,13 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
     }
 
     if (drawSpans > 0u) {
-        wgpu::RenderPassTimestampWrites writes;
-        writes.beginningOfPassWriteIndex = 0;
-        writes.endOfPassWriteIndex = 1;
-        writes.querySet = queryContainer.querySet;
+        // wgpu::RenderPassTimestampWrites writes;
+        // writes.beginningOfPassWriteIndex = 0;
+        // writes.endOfPassWriteIndex = 1;
+        // writes.querySet = queryContainer.querySet;
 
         utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
-        drawDescriptor.timestampWrites = &writes;
+        // drawDescriptor.timestampWrites = &writes;
         drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
         wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
         drawPass.SetBindGroup(0, bindGroup);
@@ -182,7 +182,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
         drawPass.Draw(drawSpans * 6u);
         drawPass.End();
 
-        queryContainer.Resolve(encoder);
+        // queryContainer.Resolve(encoder);
     }
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
@@ -195,22 +195,22 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
     // utils::BusyWaitDevice(device);
     // WriteAtlasTexture();
     // WriteColorTexture();
-
 }
 
 void Renderer::WriteColorTexture() const {
-    uint32_t width = 1920;
-    uint32_t height = 1080;
+    uint32_t width = IMAGE_WIDTH;
+    uint32_t height = IMAGE_HEIGHT;
     wgpu::Buffer buf = ReadBackTexture(device, drawTexture, width, height, 4);
     const uint8_t* data = static_cast<const uint8_t*>(buf.GetConstMappedRange());
-    uint32_t bpr = width * 4u;
+    
+    uint32_t bpr = (((width * 4) + 255) / 256) * 256;
     stbi_write_png("color.png", width, height, 4, static_cast<const void*>(data), bpr);
     buf.Destroy();
 }
 
 void Renderer::WriteAtlasTexture() const {
-    uint32_t width = 1920;
-    uint32_t height = 1080;
+    uint32_t width = IMAGE_WIDTH;
+    uint32_t height = IMAGE_HEIGHT;
     wgpu::Buffer buf = ReadBackTexture(device, atlasTexture, width, height, 4);
     const float* data = static_cast<const float*>(buf.GetConstMappedRange());
 

@@ -92,7 +92,7 @@ inline Basic QuadBezMapToBasic(const VPoint& p0, const VPoint& c0, const VPoint&
     return { x0, x2, scale, cross };
 }
 
-void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
+void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const float tolerance, BitArray& verbs, std::vector<VPoint>& points) {
     Basic params = QuadBezMapToBasic(p0, c0, p1);
     float a0 = approxIntegral(params.x0);
     float a2 = approxIntegral(params.x2);
@@ -127,12 +127,12 @@ void QuadBezFlatten(const VPoint& p0, const VPoint& c0, const VPoint& p1, const 
     for (int i = 1; i < n; i++) {
       float u = approxInvIntegral(a0 + ainc);
       float t = (u - u0) * udiv;
-      verbs.push_back(VPathVerb::kLine);
+    //   verbs.push_back(VPathVerb::kLine);
       points.push_back(evalQuadBez(p0, c0, p1, t));
       ainc += ainc;
     }
 
-    verbs.push_back(VPathVerb::kLine);
+    // verbs.push_back(VPathVerb::kLine);
     points.push_back(p1);
 }
 
@@ -165,7 +165,7 @@ void cubicBezToQuadratic(const VPoint& p0, const VPoint& c0, const VPoint& c1, c
  
 // Effectively gives the same result as blossom(c).middle, but is easier to implement.
 // Stole it from lyon2d_geom: https://github.com/nical/lyon/blob/2407b7f5e326b2a8f66bfae81fe02d850d8b0acc/crates/geom/src/cubic_bezier.rs#L153
-void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float t0, float t1, float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
+void CubicBezSplitRange(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, float t0, float t1, float tolerance, BitArray& verbs, std::vector<VPoint>& points) {
     VPoint from = evalCubicBez(p0, c0, c1, p1, t0);
     VPoint to   = evalCubicBez(p0, c0, c1, p1, t1);
     
@@ -310,7 +310,7 @@ void nvg__tesselateBezierAFD(float x1, float y1, float x2, float y2, float x3, f
 
 // Converting the cubic c to a sequence of quadratics, with the specified tolerance.
 // Returns an array that contains these quadratics.
-void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, const float tolerance, std::vector<VPathVerb>& verbs, std::vector<VPoint>& points) {
+void CubicBezToQuadratics(const VPoint& p0, const VPoint& c0, const VPoint& c1, const VPoint& p1, const float tolerance, BitArray& verbs, std::vector<VPoint>& points) {
     float numQuads = CubicBezNumQuadratics(p0, c0, c1, p1, 0.05f);
     float step = 1.0f / numQuads;
     uint32_t n = static_cast<uint32_t>(std::trunc(numQuads));
@@ -601,7 +601,7 @@ uint32_t FlattenCommands2(
 
                 outPoints[lineIndex++] = point;
                 p0 = point;
-                i += 2;
+                i += 2u;
                 break;
             }
             case VPathVerb::kCubic: {
@@ -635,14 +635,14 @@ uint32_t FlattenCommands2(
                     f = f + df;
                     df = df + ddf;
                     ddf = ddf + dddf;
-
                     outPoints[lineIndex++] = f;
                     t += dt;
                 }
 
+                // CubicBezToQuadratics(p0, c0, c1, p1, tolerance, outVerbs, outPoints);
                 outPoints[lineIndex++] = p1;
                 p0 = p1;
-                i += 3;
+                i += 3u;
                 break;
             }
 
@@ -654,13 +654,13 @@ uint32_t FlattenCommands2(
         }
 
 
-        if (lineIndex >= nextCapacityCheckLevel) {
-            if (outPoints.capacity() - lineIndex <= (1u << 18u)) {
-               outPoints.reserve(outPoints.capacity() * 2);
-               outVerbs.reserve(outVerbs.capacity() * 2); 
-            }
-            nextCapacityCheckLevel += 1024u;
-        }
+        // if (lineIndex >= nextCapacityCheckLevel) {
+        //     if (outPoints.capacity() - lineIndex <= (1u << 18u)) {
+        //        outPoints.reserve(outPoints.capacity() * 2);
+        //        outVerbs.reserve(outVerbs.capacity() * 2); 
+        //     }
+        //     nextCapacityCheckLevel += 1024u;
+        // }
     }
 
     return lineIndex;
