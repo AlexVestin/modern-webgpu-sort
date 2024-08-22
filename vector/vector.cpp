@@ -26,6 +26,8 @@ const uint32_t atlasIndicesAllocation = 1 << 18;
 
 Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
 
+uint32_t maxNumSpansPerLine = 0u;
+
 // y is in range [0, height - TILE_SIZE]
 // x is in range [-inf, width - TILE_SIZE]
 // TODO: clip lines more negative than -32767
@@ -44,6 +46,11 @@ static inline int32_t RoundDownToTile(float v) {
 static inline uint32_t Pack24And8(uint32_t lineEndIndex, uint32_t type) {
     return (type << 24u) | (lineEndIndex & 0xffffffu);
 }
+
+struct AtlasLine {
+    uint32_t atlasPosition;
+    uint32_t lineIndex;
+};
 
 std::mutex doneMtx;
 std::mutex mtx;
@@ -133,13 +140,13 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         for (int j = from; j < to; j++) {
             const auto& s = spans[j];
             uint32_t numLines = s.NumLines();            
-            for (int k = 0; k < ComputeUtil::div_up(numLines, 256); k++) {
-                uint32_t index = s.lineStartIndex + k * 256u;
-                indices.push_back((index & 0xffffffu) | (numLines << 24u));
-            }
-            // for (int k = s.lineStartIndex; k <= s.GetLineEndIndex(); k++) {
-            //         indices.push_back(k);
+            // for (int k = 0; k < ComputeUtil::div_up(numLines, 256); k++) {
+            //     uint32_t index = s.lineStartIndex + k * 256u;
+            //     indices.push_back((index & 0xffffffu) | (numLines << 24u));
             // }
+            for (int k = s.lineStartIndex; k <= s.GetLineEndIndex(); k++) {
+                indices.push_back(k);
+            }
         } 
         ds.lineEndIndex = indices.size();
         ds.pathId = (static_cast<uint32_t>((maxX + 1u)) << 16u) | pathId;
@@ -151,7 +158,6 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         //     uint2 atlasPosition;
         //     atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
         //     ds.atlasPosition = PackPosition(atlasPosition.x, atlasPosition.y);   
-
         //     uint32_t lim = ComputeUtil::div_up(spanLineCount, linesPerQuad) - 1u;
         //     for (int i = 0; i < lim; i++) {
         //         atlasIndices.push_back(drawSpans.size() | (i << 24u));
@@ -176,6 +182,8 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
     int32_t currentSpanY = sp.y;
 
     uint32_t spanLineCount = span.NumLines();
+
+    uint32_t spansPerLine = 0u;
     
     for (int i = spanStartId + 1u; i < spans.size(); i++) {
         const Span& newSpan = spans[i];
@@ -188,8 +196,14 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         bool canCommit = (newSpanX > maxSpanX) && (backdrop == 0) && spanLineCount > 1;
         bool isSplit = newSpanY == currentSpanY && canCommit;
 
+        if (newSpanY != currentSpanY) {
+            maxNumSpansPerLine = std::max(spansPerLine, maxNumSpansPerLine);
+            spansPerLine = 0u;
+        }
+
         uint32_t lineCount = newSpan.NumLines();
         if ((newSpanY != currentSpanY) || canCommit) {
+           
             EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX);
             // set new span
             currentSpanY = newSpanY;
@@ -200,25 +214,26 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
             spanId = i;
         } else {
             // Merge
-            
-            // if (maxSpanX <newSpanX && currentSpanX !=newSpanX) {
-            //     uint32_t gap =newSpanX - maxSpanX;
-            //     if (gap > 1) {
-            //         // Emit previous
-            //         EmitSpan(spanId, i, currentSpanX, currentSpanY,  maxSpanX);
-            //         EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-            //         // if (spanLineCount + lineCount > linesPerSpan) {
-            //         //     // Emit empty from end of last to start of new
-            //         //     EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-            //         // } else {
-            //         //     EmitSpan(spanId, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-            //         // }  
-            //         // update left, but not spanId so we get all the relevant lines for the future
-            //         currentSpanX = newSpanX;
-            //     }   
-            // }
+            if (maxSpanX < newSpanX && currentSpanX != newSpanX) {
+                uint32_t gap = newSpanX - maxSpanX;
+                if (gap > 2u) {
+                    // Emit previous
+                    EmitSpan(spanId, i, currentSpanX, currentSpanY,  maxSpanX);
+                    // EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
+                    // if (spanLineCount + lineCount > linesPerSpan) {
+                    //     // Emit empty from end of last to start of new
+                    //     EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
+                    // } else {
+                    //     EmitSpan(spanId, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
+                    // }  
+                    // update left, but not spanId so we get all the relevant lines for the future
+                    currentSpanX = newSpanX;
+                    spanId = i;
+                }   
+            }
             spanLineCount += lineCount;
             maxSpanX = std::max(maxSpanX, newSpan.spanMaxX);
+            
         }
 
         uint32_t t = newSpan.GetType();
@@ -227,6 +242,8 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         } else if(t == DIRECTION_DOWN) {
             backdrop--;
         }
+
+        spansPerLine++;
     }
     
     EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX);
@@ -466,7 +483,7 @@ void ThreadRun(uint32_t tid, uint32_t n, const std::vector<lyra::SVGUtil::Elemen
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("ghost.svg");
+    std::ifstream t("paris-30k.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -484,7 +501,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 10000;
+    uint32_t iterations = 2000;
 
     // CPU Local 
     std::vector<Span> spans;
@@ -586,9 +603,9 @@ int main() {
         uint32_t numDrawSpans = drawSpansGlobal.size();
         uint32_t numIndices = indicesGlobal.size();        
         
-        std::cout << lineBaseIndex << " " << numDrawSpans << " " << spans.size() << std::endl;
-        renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
-        renderer.Render(atlasIndices.size(), numDrawSpans);
+        std::cout << lineBaseIndex << " " << numIndices << " ds: " << drawSpansGlobal.size() << " ms: " << maxNumSpansPerLine << std::endl;
+        // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+        // renderer.Render(atlasIndices.size(), numDrawSpans);
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
