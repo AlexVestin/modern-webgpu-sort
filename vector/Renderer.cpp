@@ -1,5 +1,3 @@
-#pragma once
-
 #include <iostream>
 #include <string>
 #include <fstream>
@@ -24,6 +22,13 @@
 #include "../wgpu/ComboRenderPipelineDescriptor.h"
 #include "../wgpu/Blends.h"
 #include "RendererUtil.h"
+
+
+struct Uniforms {
+    uint2 viewSize;
+    uint32_t tileSize;
+    uint32_t padding;
+};
 
 static std::unique_ptr<wgpu::Instance> instance;
 
@@ -53,6 +58,7 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
         {2, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
         {3, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
         {4, doubleStage, wgpu::BufferBindingType::ReadOnlyStorage},
+        {5, doubleStage, wgpu::BufferBindingType::Uniform},
     });
 
     atlasBindGroupLayout = utils::MakeBindGroupLayout(device, "AtlasBindGroupLayout", {
@@ -105,6 +111,12 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
 
 
     queryContainer.Init(device, 2);
+
+
+    Uniforms uniformData;
+    uniformData.tileSize = TILE_SIZE;
+    uniformData.viewSize = uint2(IMAGE_WIDTH, IMAGE_HEIGHT);
+    uniformBuffer = utils::CreateBufferFromData(device, &uniformData, sizeof(Uniforms), wgpu::BufferUsage::Uniform | wgpu::BufferUsage::CopyDst, "UniformData");
 }
 
 void Renderer::InitDevice() {
@@ -229,7 +241,8 @@ void Renderer::CreateBindGroup() {
         {1, lineIndexBuffer},
         {2, flatLinePointBuffer},
         {3, drawSpansBuffer},
-        {4, atlasIndicesBuffer}
+        {4, atlasIndicesBuffer},
+        {5, uniformBuffer}
     });
 
     atlasBindGroup = utils::MakeBindGroup(device, atlasBindGroupLayout, {
@@ -248,8 +261,7 @@ void Renderer::Upload(
     uint32_t numFlatPoints,
     uint32_t numIndices,
     uint32_t numDrawSpans) {
-    uploadAmount = 0u;
-    
+    uploadAmount = 0u;    
     CreateOrUploadBuffer(device, &pathInfoBuffer, colors, colors.size(), "ColorBuffer");
     CreateOrUploadBuffer(device, &lineIndexBuffer, indices, numIndices, "LineIndexBuffer");
     CreateOrUploadBuffer(device, &flatLinePointBuffer, flatPoints, numFlatPoints, "FlatPointBuffer");

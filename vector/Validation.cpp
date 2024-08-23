@@ -34,6 +34,39 @@ static std::array<uint8_t, IMAGE_WIDTH * IMAGE_HEIGHT> outAtlas = {};
 // }
 // std::cout << "]" << std::endl;
 
+
+// for (auto& span: spans) {
+//     float minx = 1000000.0f;
+//     float maxx = -1000000.0f;
+//     std::cout << "----------------------" << UnpackPosition(span.key) << " " << span.spanMaxX << " " << span.NumLines() << std::endl;
+//     int2 tl = UnpackPosition(span.key);
+//     for (int k = span.lineStartIndex; k <= span.GetLineEndIndex(); k++) {
+//         const auto& p0 = flatPointsGlobal[k - 1];
+//         const auto& p1 = flatPointsGlobal[k];
+//         std::cout << p0 << p1 << std::endl;    
+//         float ymin = std::min(p0.y, p1.y);
+//         float ymax = std::max(p0.y, p1.y);
+//         if ((ymin < tl.y && ymax < tl.y) || (ymin >= tl.y + TILE_SIZE && ymax >= tl.y + TILE_SIZE)) {
+//             std::cerr << "Line should not be in span" << std::endl;
+//             std::cout << k << " (" << span.lineStartIndex << " " << span.GetLineEndIndex() << ")" << std::endl;
+//             exit(1);
+//         }
+//         float y0 = std::clamp(static_cast<float>(tl.y), ymin, ymax);
+//         float y1 = std::clamp(static_cast<float>(tl.y + TILE_SIZE), ymin, ymax);
+//         if (std::abs(y1 - y0) < 1.0e-6f) {
+//             minx = std::min(std::min(p0.x, minx), p1.x);
+//             maxx = std::max(std::max(p0.x, maxx), p1.x);
+//         } else {
+//             float slope = (p1.x - p0.x) / (p1.y - p0.y);
+//             float xv0 = p0.x + (y0 - p0.y) * slope;
+//             float xv1 = p0.x + (y1 - p0.y) * slope;
+//             minx = std::min(std::min(xv0, minx), xv1);
+//             maxx = std::max(std::max(xv0, maxx), xv1);
+//         }
+//     }
+//     std::cout <<  "(" << static_cast<int32_t>(std::floor(minx)) << "," << UnpackPosition(span.key).x  << ") (" << static_cast<int32_t>(std::floor(maxx)) << "," << span.spanMaxX << ")" << std::endl;
+// }
+
 bool aabbContainsSegment(const VPoint& p1, const VPoint& p2, const VPoint& min, const VPoint& max) {
     // Completely outside.
     if ((p1.x < min.x && p2.x < min.x) || (p1.y < min.y && p2.y < min.y) ||

@@ -2,10 +2,7 @@ const HALF_PI = 1.5707963268;
 const PI = 3.14159265359;
 const TWO_PI = 6.28318530718;
 const TWO_PI_QUANT = (1.0 / TWO_PI) * 255.0;
-const TILE_SIZE = 16.0;
 const LINES_PER_QUAD = 20000u;
-
-const view_step = vec2f(1.0) / vec2f(2048.0, 2048.0);
 const sqrt_of_half = 0.7071067811865475;
 const sqrt_of_half_256 = 181.01933598375615;
 const num_verts = 6u;
@@ -14,6 +11,12 @@ struct VSOutput {
     @builtin(position) position: vec4f,
     @location(0) @interpolate(linear) uv: vec2f, // distance from corner to line interpolated per line
     @location(1) @interpolate(flat) info: vec4u,
+};
+
+struct Uniforms {
+    view_size: vec2u,
+    tile_size: u32,
+    padding: u32
 };
 
 struct DrawSpan {
@@ -73,6 +76,7 @@ fn area(p0: vec2f, p1: vec2f, xy: vec2f) -> f32 {
 @group(0) @binding(2) var<storage, read> points: array<vec2f>;
 @group(0) @binding(3) var<storage, read> draw_spans: array<DrawSpan>;
 @group(0) @binding(4) var<storage, read> atlas_indices: array<u32>;
+@group(0) @binding(5) var<uniform> uniforms: Uniforms;
 
 @group(1) @binding(0) var atlas_texture: texture_2d<f32>;
 @group(1) @binding(1) var atlas_sampler : sampler;
@@ -88,9 +92,8 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     let min_x  = tl.x;
     let min_y  = tl.y;
     let max_x  = f32(draw_span.path_id >> 16u);
-    let max_y  = min_y + TILE_SIZE;
+    let max_y  = min_y + f32(uniforms.tile_size);
     let width  = max_x - min_x;
-
 
     let vertex_id = VertexIndex % 6u; 
     var pos = array(
@@ -156,8 +159,9 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     //     vec2(atl_max_x, atl_max_y), // tr1 br
     //     vec2(atl_min_x, atl_max_y), // tr1 bl
     // );
-
     // out.uv = atlas_pos[vertex_id] * view_step;
+
+
     let end_index = draw_span.line_end_index & 0xffffffu;
     let bd = i32(draw_span.line_end_index >> 24u) - 127;
 
@@ -166,6 +170,7 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     out.info.y = colors[draw_span.path_id & 0xffffu];
     out.info.z = bitcast<u32>(bd);
 
+    let view_step = vec2f(1.0) / vec2f(uniforms.view_size);
     var p = v_pos * view_step * 2.0 - 1.0;
     out.position = vec4<f32>(p.x, -p.y, 0.0, 1.0);
     return out;
@@ -175,7 +180,7 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
 @fragment
 fn frag_main(
     @builtin(position) pos: vec4f,
-    @location(0) @interpolate(linear) uv: vec2f, // distance from corner to line interpolated per line
+    @location(0) @interpolate(linear) uv: vec2f, 
     @location(1) @interpolate(flat) info: vec4u,
     ) -> @location(0) vec4<f32> {    
     
@@ -190,10 +195,9 @@ fn frag_main(
         for (var j = 0u; j < span_line_count; j++) {
             let p0 = points[span_start_index + j - 1u];
             let p1 = points[span_start_index + j];
-            a += area(p0, p1, xy) * f32(i < cnt);
+            a += area(p0, p1, xy);
         }
-        
     }
     a = min(abs(a - 2.0 * round(0.5 * a)), 1.0); 
-    return unpack4x8unorm(info.y) * a;
+    return unpack4x8unorm(info.y) * a;// * 0.8 + vec4f(0.2, 0.0, 0.0, 0.3);
 }

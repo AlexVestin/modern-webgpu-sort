@@ -122,6 +122,7 @@ private:
     wgpu::Buffer flatLinePointBuffer;
     wgpu::Buffer drawSpansBuffer;
     wgpu::Buffer atlasIndicesBuffer;
+    wgpu::Buffer uniformBuffer;
 
     wgpu::Buffer textureDataBuffer;
     wgpu::Device device;
