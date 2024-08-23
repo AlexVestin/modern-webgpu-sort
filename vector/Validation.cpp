@@ -318,40 +318,40 @@ void Render(uint32_t start, const std::vector<DrawSpan>& spans, const std::vecto
 
         uint32_t width = mx - tl_x;
 
-        for (int cy = 0; cy < TILE_SIZE; cy++) {
-            uint32_t y = tl_y + cy;
-            if (y >= IMAGE_HEIGHT) {
-                break;
-            }
-            for (int cx = 0; cx < width; cx++) {
-                uint32_t x = tl_x + cx;
-                if (x >= IMAGE_WIDTH) {
-                    break;
-                }
+        // for (int cy = 0; cy < TILE_SIZE; cy++) {
+        //     uint32_t y = tl_y + cy;
+        //     if (y >= IMAGE_HEIGHT) {
+        //         break;
+        //     }
+        //     for (int cx = 0; cx < width; cx++) {
+        //         uint32_t x = tl_x + cx;
+        //         if (x >= IMAGE_WIDTH) {
+        //             break;
+        //         }
                 
-                float area = 0.0f;
-                uint32_t count = span.lineEndIndex - span.lineStartIndex;
-                // if (count > linesPerQuad) {
-                //     uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x + cx;
-                //     area += atlas[atlasIndex];
-                // } 
+        //         float area = 0.0f;
+        //         uint32_t count = span.lineEndIndex - span.lineStartIndex;
+        //         // if (count > linesPerQuad) {
+        //         //     uint32_t atlasIndex = (atl_tl_y + cy) * IMAGE_WIDTH + atl_tl_x + cx;
+        //         //     area += atlas[atlasIndex];
+        //         // } 
 
-                for (int i = 0; i < std::min(count, linesPerQuad); i++) {
-                    uint32_t lineIndex = indices[span.lineStartIndex + i];
-                    const VPoint& p0 = flatLinePoints[lineIndex - 1u];
-                    const VPoint& p1 = flatLinePoints[lineIndex];
-                    // Draw line          
-                    area += Area(p0, p1, VPoint::Make(x, y));
-                }
+        //         for (int i = 0; i < std::min(count, linesPerQuad); i++) {
+        //             uint32_t lineIndex = indices[span.lineStartIndex + i];
+        //             const VPoint& p0 = flatLinePoints[lineIndex - 1u];
+        //             const VPoint& p1 = flatLinePoints[lineIndex];
+        //             // Draw line          
+        //             area += Area(p0, p1, VPoint::Make(x, y));
+        //         }
 
-                float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f); 
-                uint32_t pixelIndex = y * IMAGE_WIDTH + x;
-                float4 dst = unpack(image[pixelIndex]);
-                float4 src = color * a;
-                float4 res = dst * float4(1.0 - src.w) + src;
-                image[pixelIndex] = pack(res);
-            }        
-        }
+        //         float a = std::min(std::abs(area - 2.0f * std::round(0.5f * area)), 1.0f); 
+        //         uint32_t pixelIndex = y * IMAGE_WIDTH + x;
+        //         float4 dst = unpack(image[pixelIndex]);
+        //         float4 src = color * a;
+        //         float4 res = dst * float4(1.0 - src.w) + src;
+        //         image[pixelIndex] = pack(res);
+        //     }        
+        // }
     }
 }
 
