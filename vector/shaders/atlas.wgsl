@@ -2,8 +2,8 @@ const HALF_PI = 1.5707963268;
 const PI = 3.14159265359;
 const TWO_PI = 6.28318530718;
 const TWO_PI_QUANT = (1.0 / TWO_PI) * 255.0;
-const TILE_SIZE = 8.0;
-const LINES_PER_QUAD = 2000u;
+const TILE_SIZE = 16.0;
+const LINES_PER_QUAD = 4u;
 
 const view_step = vec2f(1.0) / vec2f(1920.0, 1080.0);
 const sqrt_of_half = 0.7071067811865475;
@@ -111,7 +111,6 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
 
     // -----Read lines -----
     let offset = ((span_info >> 24u) + 1u) * LINES_PER_QUAD;     
-    var start_index = draw_span.line_start_index + offset;
 
     // Loop 1
     // for (var i = 0u; i < 4u; i++) {
@@ -166,9 +165,36 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
         vec2(atl_min_x, atl_max_y), // tr1 bl
     );
 
-    out.info.x = start_index;
-    out.info.y = min(draw_span.line_end_index, start_index + LINES_PER_QUAD);
 
+    var count = 0u;
+    var index = 0u;
+    var start_index = ~0u;
+    var number_lines = ~0u;
+    var first_span_offset = 0u;
+    // find start
+    let num_spans = draw_span.line_end_index - draw_span.line_start_index; // + 1?
+    while (index < num_spans) {
+        let index_data = line_indices[draw_span.line_start_index + index];
+        count += (index_data >> 24u);
+        
+        if (count >= offset && start_index == ~0u) {
+            start_index = draw_span.line_start_index + index;
+        }
+
+        if (count >= offset + LINES_PER_QUAD) {
+            count = LINES_PER_QUAD;
+            break;
+        }
+        index++;
+    }
+
+    if (number_lines == ~0u) {
+        number_lines = count - offset;
+    }
+
+
+    out.info.x = start_index;
+    out.info.y = (first_span_offset << 16u) | number_lines;
     out.dist0 = vec4f(v_pos, out.dist0.zw);
 
     var p = atlas_pos[vertex_id] * view_step * 2.0 - 1.0;    
@@ -186,17 +212,32 @@ fn frag_main(
     @location(3) @interpolate(flat) heights1: vec2u, 
     @location(4) @interpolate(flat) angles: vec2u, // 8 bits per angle
     @location(5) @interpolate(flat) info: vec2u, // pa
-    ) -> @location(0) vec4<f32> {    
-
-
+    ) -> @location(0) vec4<f32> {
     var a = 0.0;
     let xy = dist0.xy - vec2f(0.5);
-    for (var i = 0u; i < 8u; i++) {
-        let index = line_indices[info.x + i];
-        let p0 = points[index - 1u];
-        let p1 = points[index];
-        a += area(p0, p1, xy) * f32(info.x + i < info.y);
-    }
 
+    let start_span_index = info.x;
+    var first_span_offset = info.y >> 16u;
+    let number_lines = info.y & 0xffffu;
+
+    var count = 0u;
+    var i = 0u;
+
+    while (count < LINES_PER_QUAD) {
+        let index_data = line_indices[start_span_index + i];
+        let span_start_index = index_data & 0xffffffu;
+        let span_line_count = index_data >> 24u;
+        
+        for (var j = first_span_offset; j < min(span_line_count, first_span_offset + LINES_PER_QUAD); j++) {
+            let p0 = points[span_start_index + j - 1u];
+            let p1 = points[span_start_index + j];
+            a += area(p0, p1, xy) * f32(i < number_lines);
+            count++;
+        }
+
+        first_span_offset = 0u;
+        i++;
+    }
+    
     return vec4f(a);
 }

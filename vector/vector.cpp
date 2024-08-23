@@ -27,6 +27,7 @@ const uint32_t atlasIndicesAllocation = 1 << 18;
 Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
 
 uint32_t maxNumSpansPerLine = 0u;
+uint32_t gaps = 0u;
 
 // y is in range [0, height - TILE_SIZE]
 // x is in range [-inf, width - TILE_SIZE]
@@ -52,18 +53,6 @@ struct AtlasLine {
     uint32_t lineIndex;
 };
 
-std::mutex doneMtx;
-std::mutex mtx;
-std::condition_variable cv_start, cv_done;
-std::atomic<int> counter = 0;
-uint32_t pointSum = 0u;
-std::atomic<bool> killThreads = false;
-std::atomic<int64_t> startIteration = -1;
-std::atomic<int64_t> copyIteration = -1;
-
-std::vector<std::atomic<uint32_t>> flatPointCounts(32);
-std::vector<std::atomic<uint32_t>> drawSpansCounts(32);
-std::vector<std::atomic<uint32_t>> lineIndicesCounts(32);
 
 struct AtlasManager {
     AtlasManager(uint32_t width, uint32_t height) : atlasWidth{width}, atlasHeight{height} { }
@@ -84,20 +73,24 @@ struct AtlasManager {
                 return true;
             }
         }
+
+        if (freeRows.size() >= 4) {
+            freeRows.pop_front();
+        }
         
         uint32_t spaceLeftInRow = atlasWidth - counterX; // + 1?
-        if (spaceLeftInRow <= w) {
+        if (spaceLeftInRow < w) {
             if (spaceLeftInRow > 4)  {
                 freeRows.push_back({counterX, counterY});
             }
 
             // Break into new row
             counterY += TILE_SIZE;
-            if (counterY >= atlasHeight) {
-                // Fail
-                // std::cerr << "Allocating outside" << std::endl;
-                return false;
-            }
+            // if (counterY >= atlasHeight) {
+            //     // Fail
+            //     // std::cerr << "Allocating outside" << std::endl;
+            //     return false;
+            // }
 
             counterX = 0u;  
         }
@@ -116,6 +109,10 @@ struct AtlasManager {
         return (counterY * atlasWidth + counterX * TILE_SIZE);
     }
 
+    uint32_t Allocation() const {
+        return allocation;
+    }
+
     uint32_t counterX = 0;
     uint32_t counterY = 0;
     uint32_t allocation = 0u;
@@ -127,8 +124,9 @@ struct AtlasManager {
     const uint32_t atlasHeight;
 };
 
-void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager, std::vector<uint32_t>& atlasIndices) {
-    auto EmitSpan = [&](uint32_t from, uint32_t to, int32_t x, int32_t y, int32_t maxX) {
+void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager, std::vector<AtlasLine>& atlasIndices) {
+    int32_t lastBackdrop = 0;
+    auto EmitSpan = [&](uint32_t from, uint32_t to, int32_t x, int32_t y, int32_t maxX, int32_t backdrop) {
         if (maxX < 0 || y < 0 || y >= IMAGE_HEIGHT || x >= IMAGE_WIDTH) {
             return;
         }
@@ -137,35 +135,43 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         DrawSpan ds;
         ds.lineStartIndex = indices.size();
         
+
+        uint32_t c = 0u;
         for (int j = from; j < to; j++) {
             const auto& s = spans[j];
             uint32_t numLines = s.NumLines();            
-            // for (int k = 0; k < ComputeUtil::div_up(numLines, 256); k++) {
-            //     uint32_t index = s.lineStartIndex + k * 256u;
-            //     indices.push_back((index & 0xffffffu) | (numLines << 24u));
-            // }
-            for (int k = s.lineStartIndex; k <= s.GetLineEndIndex(); k++) {
-                indices.push_back(k);
+            for (int k = 0; k < ComputeUtil::div_up(numLines, 256); k++) {
+                uint32_t index = s.lineStartIndex + k * 256u;
+                indices.push_back((index & 0xffffffu) | (numLines << 24u));
             }
+            // for (int k = s.lineStartIndex; k <= s.GetLineEndIndex(); k++) {
+            //     if (c >= linesPerQuad) {
+            //         atlasIndices.push_back(k);
+            //     }
+            //     c++;
+            // }
         } 
         ds.lineEndIndex = indices.size();
         ds.pathId = (static_cast<uint32_t>((maxX + 1u)) << 16u) | pathId;
         ds.position = PackPosition(x, y);
+        ds.backdrop = lastBackdrop;
+
+        lastBackdrop = backdrop;
 
         uint32_t spanLineCount = ds.lineEndIndex - ds.lineStartIndex;
         
-        // if (spanLineCount > linesPerQuad) {
-        //     uint2 atlasPosition;
-        //     atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
-        //     ds.atlasPosition = PackPosition(atlasPosition.x, atlasPosition.y);   
-        //     uint32_t lim = ComputeUtil::div_up(spanLineCount, linesPerQuad) - 1u;
-        //     for (int i = 0; i < lim; i++) {
-        //         atlasIndices.push_back(drawSpans.size() | (i << 24u));
-        //     }
-        // } 
+        if (spanLineCount > linesPerQuad) {
+            uint2 atlasPosition;
+            atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
+            ds.atlasPosition = PackPosition(atlasPosition.x, atlasPosition.y);
+            // uint32_t lim = ComputeUtil::div_up(spanLineCount, linesPerQuad) - 1u;
+            // for (int i = 0; i < lim; i++) {
+            //     atlasIndices.push_back(drawSpans.size() | (i << 24u));
+            // }
+        } 
         // else if(spanLineCount == 0u) {
         //     const uint2& edgePosition = atlasManager.GetLastEdgePosition();
-        //     ds.atlasPosition = (edgePosition.y << 16u) | edgePosition.x;
+        //     // ds.atlasPosition = (edgePosition.y << 16u) | edgePosition.x;
         // }
 
         drawSpans.push_back(ds);
@@ -173,7 +179,6 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
 
     int32_t backdrop = 0;
     uint32_t spanId = spanStartId;
-
     const Span& span = spans[spanId];
     int32_t maxSpanX = span.spanMaxX;
 
@@ -182,8 +187,6 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
     int32_t currentSpanY = sp.y;
 
     uint32_t spanLineCount = span.NumLines();
-
-    uint32_t spansPerLine = 0u;
     
     for (int i = spanStartId + 1u; i < spans.size(); i++) {
         const Span& newSpan = spans[i];
@@ -196,15 +199,10 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         bool canCommit = (newSpanX > maxSpanX) && (backdrop == 0) && spanLineCount > 1;
         bool isSplit = newSpanY == currentSpanY && canCommit;
 
-        if (newSpanY != currentSpanY) {
-            maxNumSpansPerLine = std::max(spansPerLine, maxNumSpansPerLine);
-            spansPerLine = 0u;
-        }
-
         uint32_t lineCount = newSpan.NumLines();
         if ((newSpanY != currentSpanY) || canCommit) {
            
-            EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX);
+            EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX, backdrop);
             // set new span
             currentSpanY = newSpanY;
             currentSpanX = newSpanX;
@@ -216,24 +214,21 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
             // Merge
             if (maxSpanX < newSpanX && currentSpanX != newSpanX) {
                 uint32_t gap = newSpanX - maxSpanX;
-                if (gap > 2u) {
-                    // Emit previous
-                    EmitSpan(spanId, i, currentSpanX, currentSpanY,  maxSpanX);
-                    // EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-                    // if (spanLineCount + lineCount > linesPerSpan) {
-                    //     // Emit empty from end of last to start of new
-                    //     EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-                    // } else {
-                    //     EmitSpan(spanId, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u);
-                    // }  
-                    // update left, but not spanId so we get all the relevant lines for the future
+                if (gap > 4) {
+                    // previous
+                    EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX, backdrop);
+                    // gap
+                    EmitSpan(i, i, maxSpanX, currentSpanY, newSpanX, backdrop);
+
                     currentSpanX = newSpanX;
+                    spanLineCount = 0u;
                     spanId = i;
+
+                    gaps += gap;
                 }   
             }
             spanLineCount += lineCount;
             maxSpanX = std::max(maxSpanX, newSpan.spanMaxX);
-            
         }
 
         uint32_t t = newSpan.GetType();
@@ -242,11 +237,9 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         } else if(t == DIRECTION_DOWN) {
             backdrop--;
         }
-
-        spansPerLine++;
     }
     
-    EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX);
+    EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX, backdrop);
 }
 
 void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArray& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
@@ -296,7 +289,6 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
             int32_t step = (lineDirection == DIRECTION_DOWN) ? TILE_SIZE : -TILE_SIZE;
             int32_t nextY = (lineDirection == DIRECTION_DOWN) ? spanTileY + TILE_SIZE : spanTileY;
 
-            // Cant be zero because of the same tile check from earlier
             float slope = (p1.x - p0.x) / (p1.y - p0.y);            
             float xv0 = p0.x;
             float xv1 = p0.x + (static_cast<float>(nextY) - p0.y) * slope;
@@ -359,127 +351,6 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
     return { e };
 }
 
-void ThreadRun(uint32_t tid, uint32_t n, const std::vector<lyra::SVGUtil::Element>& elements) {
-    std::vector<VPoint> flatPoints;
-    std::vector<uint32_t> indices;
-    std::vector<DrawSpan> drawSpans;
-    std::vector<uint32_t> atlasIndices;
-    std::vector<Span> spans;
-    BitArray flatVerbs;
-
-    // TODO: retain
-    flatPoints.reserve(1u << 18u);
-    flatVerbs.reserve(1u << 18u);
-    spans.reserve(1u << 14u);
-    drawSpans.reserve(1u << 14u);
-    indices.reserve(1u << 14u);
-    // atlasIndices.reserve(1u << 1);
-
-    AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
-
-    std::chrono::high_resolution_clock::time_point h_start, h_end;
-
-    uint32_t myIteration = 0u;
-    while (true) {
-        // std::cout << "Waiting" << std::endl;
-        {
-            std::unique_lock<std::mutex> lk(mtx);
-            cv_start.wait(lk, [myIteration] { return myIteration == startIteration; });
-        }
-    
-        if (killThreads) {
-            break;
-        }
-
-        uint32_t slice = ComputeUtil::div_up(pointSum, n);
-        flatPoints.clear();
-        flatVerbs.clear();
-        spans.clear();
-        drawSpans.clear();
-        indices.clear();
-        atlasIndices.clear();
-
-
-        h_start = std::chrono::high_resolution_clock::now();
-        uint32_t lineBaseIndex = 0u;
-        uint32_t numPoints = 0u;
-        for (int i = 0; i < elements.size(); i++) {
-            const auto& el = elements[i];
-            auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
-            const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
-            if (numPoints < slice * tid) {
-                numPoints += points.size();
-                continue;
-            }
-
-            
-
-            const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle);
-            numPoints += points.size();
-            
-            uint32_t flatStartIndex = lineBaseIndex;
-            lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPoints, 0.1f, lineBaseIndex);
-            uint32_t spanStartIndex = spans.size();
-            // TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPoints, spans);
-            std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
-                return s0.key < s1.key;
-            });
-            uint32_t drawSpansStartIndex = drawSpans.size();
-            MergeSpans(spanStartIndex, spans, indices, drawSpans, i, atlasManager, atlasIndices);                   
-            
-            if (numPoints >= (tid + 1) * slice) {
-                break;
-            } 
-        }
-
-        h_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
-
-        for (int i = 0; i < n; i++) {
-            if (tid <= i) {
-                flatPointCounts[i].fetch_add(lineBaseIndex);
-                drawSpansCounts[i].fetch_add(drawSpans.size());
-                lineIndicesCounts[i].fetch_add(indices.size());
-            }
-        }
-
-        // std::cout << "tid: " << tid << " " << ms_double.count() << " " << numPoints << std::endl;
-        counter++;
-        if (counter.load() == n) {
-            {
-                std::unique_lock<std::mutex> lk(mtx);
-                cv_done.notify_one();
-            }
-        }
-
-        {
-            std::unique_lock<std::mutex> lk(mtx);
-            cv_start.wait(lk, [myIteration] { return myIteration == copyIteration; });
-        }
-
-        // Copy time
-
-        // if (tid == 0) {
-        //     for (int i = 0; i < flatPointCounts[0]; i++) flatPointsGlobal[i] = flatPoints[i];
-        //     for (int i = 0; i < lineIndicesCounts[0]; i++) indicesGlobal[i] = indices[i];
-        //     for (int i = 0; i < drawSpansCounts[0]; i++) drawSpansGlobal[i] = drawSpans[i];
-        // } else {
-        //     for (int i = flatPointCounts[tid - 1]; i < flatPointCounts[tid]; i++) flatPointsGlobal[i] = flatPoints[i - flatPointCounts[tid - 1]];
-        //     for (int i = lineIndicesCounts[tid - 1]; i < lineIndicesCounts[tid]; i++) indicesGlobal[i] = indices[i - lineIndicesCounts[tid - 1]];
-        //     for (int i = drawSpansCounts[tid - 1]; i < drawSpansCounts[tid]; i++) drawSpansGlobal[i] = drawSpans[i - drawSpansCounts[tid - 1]];
-        // }
-
-        counter++;
-        if (counter.load() == n) {
-            {
-                std::unique_lock<std::mutex> lk(mtx);
-                cv_done.notify_one();
-            }
-        }
-        
-        myIteration++;
-    }
-}   
 
 int main() {
     using std::chrono::milliseconds;
@@ -501,22 +372,17 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 2000;
+    uint32_t iterations = 10000;
 
     // CPU Local 
     std::vector<Span> spans;
     BitArray flatVerbs;
-    std::vector<uint32_t> atlasIndices;
+    std::vector<AtlasLine> atlasIndices;
 
 
     std::vector<VPoint> flatPointsGlobal;
     std::vector<uint32_t> indicesGlobal;
     std::vector<DrawSpan> drawSpansGlobal;
-
-    // std::vector<std::thread> threads(11);        
-    // for (uint32_t i = 0; i < threads.size(); i++) {
-    //     threads[i] = std::thread(&ThreadRun, i, threads.size(), std::cref(elements)); 
-    // }
 
 
     for (int j = 0; j < iterations; j++) {
@@ -539,49 +405,7 @@ int main() {
         atlasIndices.reserve(atlasIndicesAllocation);
     
         AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
-        
-
-        // for (int i = 0; i < threads.size(); i++) {
-        //     flatPointCounts[i] = 0u;
-        //     drawSpansCounts[i] = 0u;
-        //     lineIndicesCounts[i] = 0u;
-        // }
-
-        // pointSum = 0u;
-        // uint32_t ii = 0u;
-        // for (auto& el: elements) {
-        //     auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
-        //     pointSum += el.path.GetPoints(paintStyle).size();
-        //     colors[ii++] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-        //             el.paint.GetFillColor().GetU8ABGR();
-        // }
-        // {
-        //     std::lock_guard<std::mutex> lk(mtx);
-        //     startIteration = j;
-        //     counter = 0;  
-        // }
-        // cv_start.notify_all();
-        // {
-        //     std::unique_lock<std::mutex> lk(mtx);
-        //     cv_done.wait(lk, [n = threads.size()] { return counter == n; });
-        //     counter = 0;
-        //     // Make sure we have space
-        //     flatPointsGlobal.reserve(flatPointCounts[threads.size() - 1u]);
-        //     indicesGlobal.reserve(lineIndicesCounts[threads.size() - 1u]);
-        //     drawSpansGlobal.reserve(drawSpansCounts[threads.size() - 1u]);
-        //     copyIteration = j;
-        // }
-        // // start copy
-        // cv_start.notify_all();
-        // {
-        //     std::unique_lock<std::mutex> lk(mtx);
-        //     cv_done.wait(lk, [n = threads.size()] { return counter == n; });
-        //     // Copy should be done
-        // }
-
-        // uint32_t lineBaseIndex = flatPointCounts[threads.size() - 1u];
-        // uint32_t numDrawSpans = drawSpansCounts[threads.size() - 1u];
-        // uint32_t numIndices = lineIndicesCounts[threads.size() - 1u];
+        uint32_t estimatedTileArea = 0u;
         
         uint32_t lineBaseIndex = 0u;
         for (int i = 0; i < elements.size(); i++) {
@@ -603,38 +427,18 @@ int main() {
         uint32_t numDrawSpans = drawSpansGlobal.size();
         uint32_t numIndices = indicesGlobal.size();        
         
-        std::cout << lineBaseIndex << " " << numIndices << " ds: " << drawSpansGlobal.size() << " ms: " << maxNumSpansPerLine << std::endl;
         // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
         // renderer.Render(atlasIndices.size(), numDrawSpans);
+ 
+        std::cout << "Used space: " << atlasManager.UsedSpace() << " " << atlasManager.Allocation() << " " << drawSpansGlobal.size() << std::endl;
 
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
         std::cout << ms_double.count() << std::endl;
         avgTime += ms_double.count();
-
-
-        // for (auto& drawSpan: drawSpansGlobal) {
-        //     for (int i = drawSpan.lineStartIndex; i < drawSpan.lineEndIndex; i++) {
-        //         uint32_t ind = indicesGlobal[i] & 0xffffffu;
-        //         uint32_t cnt = indicesGlobal[i] >> 24u;
-        //         std::cout << ind << " " << cnt << std::endl;
-        //     }
-        // }
     }
 
-    // Notify all threads to start
-    // {
-    //     std::lock_guard<std::mutex> lk(mtx);
-    //     killThreads = true;
-    //     startIteration = iterations;
-    // }
-    // cv_start.notify_all();
-    // for (uint32_t i = 0; i < threads.size(); i++) {
-    //     threads[i].join();
-    // }
-
     renderer.Dispose();
-
     std::cout << "avgTime: " << avgTime / iterations << std::endl;
     return 0;
 }

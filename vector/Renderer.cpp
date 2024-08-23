@@ -181,7 +181,6 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
         drawPass.SetPipeline(drawPipeline);
         drawPass.Draw(drawSpans * 6u);
         drawPass.End();
-
         // queryContainer.Resolve(encoder);
     }
 

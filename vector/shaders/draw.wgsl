@@ -2,8 +2,8 @@ const HALF_PI = 1.5707963268;
 const PI = 3.14159265359;
 const TWO_PI = 6.28318530718;
 const TWO_PI_QUANT = (1.0 / TWO_PI) * 255.0;
-const TILE_SIZE = 8.0;
-const LINES_PER_QUAD = 2000u;
+const TILE_SIZE = 16.0;
+const LINES_PER_QUAD = 4u;
 
 const view_step = vec2f(1.0) / vec2f(1920.0, 1080.0);
 const sqrt_of_half = 0.7071067811865475;
@@ -13,7 +13,7 @@ const num_verts = 6u;
 struct VSOutput {
     @builtin(position) position: vec4f,
     @location(0) @interpolate(linear) uv: vec2f, // distance from corner to line interpolated per line
-    @location(1) @interpolate(flat) info: vec2u,
+    @location(1) @interpolate(flat) info: vec4u,
 };
 
 struct DrawSpan {
@@ -21,8 +21,8 @@ struct DrawSpan {
     line_start_index: u32,
     line_end_index: u32,
     path_id: u32,
-    // atlas_position: u32,
-    // padding: u32,
+    atlas_position: u32,
+    backdrop: i32,
 };
 
 fn unpack_position(v: u32) -> vec2f {
@@ -142,25 +142,26 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     //     out.heights1[i >> 1u] = (h << ((i & 1u) * 16u));
     // }
 
-    // let atl_tl = unpack_position(draw_span.atlas_position);
-    // let atl_min_x  = atl_tl.x;
-    // let atl_min_y  = atl_tl.y;
-    // let atl_max_x  = atl_min_x + width;
-    // let atl_max_y  = atl_min_y + TILE_SIZE;
+    let atl_tl = unpack_position(draw_span.atlas_position);
+    let atl_min_x  = atl_tl.x;
+    let atl_min_y  = atl_tl.y;
+    let atl_max_x  = atl_min_x + width;
+    let atl_max_y  = atl_min_y + TILE_SIZE;
 
-    // var atlas_pos = array(
-    //     vec2(atl_min_x, atl_min_y), // tr0 tl
-    //     vec2(atl_max_x, atl_min_y), // tr0 tr
-    //     vec2(atl_max_x, atl_max_y), // tr0 br
-    //     vec2(atl_min_x, atl_min_y), // tr1 tl
-    //     vec2(atl_max_x, atl_max_y), // tr1 br
-    //     vec2(atl_min_x, atl_max_y), // tr1 bl
-    // );
+    var atlas_pos = array(
+        vec2(atl_min_x, atl_min_y), // tr0 tl
+        vec2(atl_max_x, atl_min_y), // tr0 tr
+        vec2(atl_max_x, atl_max_y), // tr0 br
+        vec2(atl_min_x, atl_min_y), // tr1 tl
+        vec2(atl_max_x, atl_max_y), // tr1 br
+        vec2(atl_min_x, atl_max_y), // tr1 bl
+    );
 
-    // out.uv = atlas_pos[vertex_id] * view_step;
+    out.uv = atlas_pos[vertex_id] * view_step;
     let count = min(draw_span.line_end_index - draw_span.line_start_index, LINES_PER_QUAD);
     out.info.x = draw_span.line_start_index | (count  << 24u);
     out.info.y = colors[draw_span.path_id & 0xffffu];
+    out.info.z = bitcast<u32>(draw_span.backdrop);
 
     var p = v_pos * view_step * 2.0 - 1.0;
     out.position = vec4<f32>(p.x, -p.y, 0.0, 1.0);
@@ -172,13 +173,15 @@ fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
 fn frag_main(
     @builtin(position) pos: vec4f,
     @location(0) @interpolate(linear) uv: vec2f, // distance from corner to line interpolated per line
-    @location(1) @interpolate(flat) info: vec2u,
+    @location(1) @interpolate(flat) info: vec4u,
     ) -> @location(0) vec4<f32> {    
     
     let xy = pos.xy - vec2f(0.5);
     let start = info.x & 0xffffffu;
-    let cnt = info.x >> 24u;
-    var a = 0.0; //textureSample(atlas_texture, atlas_sampler, uv).x;
+    let cnt = min(info.x >> 24u, LINES_PER_QUAD);
+    let backdrop = bitcast<i32>(info.z);
+
+    var a = f32(backdrop) + textureSample(atlas_texture, atlas_sampler, uv).x;
     for (var i = 0u; i < cnt; i++) {
         let index_data = line_indices[start + i];
         let span_start_index = index_data & 0xffffffu;
@@ -187,8 +190,7 @@ fn frag_main(
             let p0 = points[span_start_index + j - 1u];
             let p1 = points[span_start_index + j];
             a += area(p0, p1, xy) * f32(i < cnt);
-        }
-        
+        }   
     }
     a = min(abs(a - 2.0 * round(0.5 * a)), 1.0); 
     return unpack4x8unorm(info.y) * a;

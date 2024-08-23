@@ -100,6 +100,7 @@
         "stop_token": "cpp",
         "text_encoding": "cpp",
         "thread": "cpp",
-        "source_location": "cpp"
+        "source_location": "cpp",
+        "*.txt": "cpp"
     }
 }
