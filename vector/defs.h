@@ -7,8 +7,8 @@
 using namespace linalg::aliases;
 using namespace linalg::ostream_overloads;
 
-const uint32_t IMAGE_WIDTH = 1920;
-const uint32_t IMAGE_HEIGHT = 1080;
+const uint32_t IMAGE_WIDTH = 2048;
+const uint32_t IMAGE_HEIGHT = 2048;
 const uint32_t DIRECTION_UP  = 1u;
 const uint32_t DIRECTION_DOWN = 2u;
 const uint32_t TILE_SIZE = 16u;
@@ -87,7 +87,9 @@ private:
 struct DrawSpan {
     uint32_t position;
     uint32_t pathId;
-    uint32_t atlasPosition;
-    uint32_t backdropLine0Packed;
-    uint2 lineIndices;
+    uint32_t lineStartIndex;
+    uint32_t lineEndIndex;
+    // uint32_t atlasPosition;
+    // uint32_t backdropLine0Packed;
+    // uint2 lineIndices;
 };
