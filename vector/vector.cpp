@@ -4,14 +4,14 @@
 #include <string>
 #include <vector>
 #include <chrono>
-#include <deque>
-#include <list>
-
 #include <thread>
 
 #include "defs.h"
 #include "Validation.h"
+
+#ifndef __EMSCRIPTEN__
 #include "Renderer.h"
+#endif
 
 #include "Flatten.h"
 #include "path/SVGUtil.h"
@@ -22,7 +22,9 @@ const uint32_t drawSpansAllocation = 1 << 18;
 const uint32_t indicesAllocation = 1 << 18;
 const uint32_t atlasIndicesAllocation = 1 << 21u;
 
+#ifndef __EMSCRIPTEN__
 Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
+#endif
 
 // y is in range [0, height - TILE_SIZE]
 // x is in range [-inf, width - TILE_SIZE]
@@ -52,77 +54,11 @@ static inline int32_t SpanTypeToBackdrop(uint32_t direction) {
     return 0;
 }
 
-struct AtlasManager {
-    AtlasManager(uint32_t width, uint32_t height) : atlasWidth{width}, atlasHeight{height} { }
-
-    bool Claim(uint32_t width, uint32_t height, uint2& pos) {
-        uint32_t w = std::min(width, atlasWidth);
-        allocation += w * height;
-
-        for (std::list<uint2>::iterator it = freeRows.begin(); it != freeRows.end(); ++it){
-            uint32_t spaceLeftInRow = atlasWidth - it->x;
-            if (spaceLeftInRow > w) { 
-                pos = *it;
-                it->x += w;
-                if (spaceLeftInRow - w < 4) {
-                    freeRows.erase(it);
-                }
-                return true;
-            }
-        }
-
-        if (freeRows.size() >= 4) {
-            freeRows.pop_front();
-        }
-        
-        uint32_t spaceLeftInRow = atlasWidth - counterX; // + 1?
-        if (spaceLeftInRow < w) {
-            if (spaceLeftInRow > 4)  {
-                freeRows.push_back({counterX, counterY});
-            }
-
-            // Break into new row
-            counterY += TILE_SIZE;
-            // if (counterY >= atlasHeight) {
-            //     // Fail
-            //     // std::cerr << "Allocating outside" << std::endl;
-            //     return false;
-            // }
-
-            counterX = 0u;  
-        }
-
-        // std::cout << "Allocating: " << w << " " << position() << std::endl;
-        pos = uint2(counterX, counterY);
-        counterX += w;
-        return true;
-    }   
-
-    uint32_t UsedSpace() const {
-        return (counterY * atlasWidth + counterX * TILE_SIZE);
-    }
-
-    uint32_t Allocation() const {
-        return allocation;
-    }
-
-    uint2 position() const {
-        return uint2(counterX, counterY);
-    }
-
-    uint32_t counterX = 0;
-    uint32_t counterY = 0;
-    uint32_t allocation = 0u;
-
-    std::list<uint2> freeRows;
-    const uint32_t atlasWidth;
-    const uint32_t atlasHeight;
-};
-
-void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager, std::vector<uint32_t>& atlasIndices, const std::vector<VPoint>& flatPoints) {
+void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, std::vector<uint32_t>& atlasIndices, const std::vector<VPoint>& flatPoints) {
     int32_t lastBackdrop = 0;
     auto EmitSpan = [&drawSpans, &lastBackdrop, pathId](uint32_t from, uint32_t to, int32_t x, int32_t y, int32_t maxX, int32_t backdrop) {
-        if (maxX < 0 || y < 0 || y >= IMAGE_HEIGHT || x >= IMAGE_WIDTH) {
+        if (maxX < 0 || y >= IMAGE_HEIGHT ) {
+            lastBackdrop = backdrop;
             return;
         }
         x = std::max(0, x);
@@ -182,7 +118,7 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
     EmitSpan(lastIndexBase, indices.size(), spanPosition.x, spanPosition.y, maxSpanX, backdrop);
 }
 
-void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArray& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
+void TraverseSpanLines(uint32_t workStartIndex, uint32_t workEndIndex, const BitArray& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
     VPoint p0 = flatPoints[workStartIndex];
 
     int32_t spanTileY = RoundDownToTile(p0.y);
@@ -198,7 +134,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
         Span span;
         span.key = PackPosition(std::floor(spanMinX), spanTileY);
         span.lineStartIndex = spanLineStartIndex;
-        span.PackTypeLineEndIndex(0, i - 1);
+        span.PackTypeLineEndIndex(0, i - 1u);
         span.spanMaxX = std::floor(spanMaxX);
         if (spanEntryDirection != 0u) {
             spans[contourId].SetType((spans[contourId].GetType() != spanEntryDirection) ? 0 : spanEntryDirection);
@@ -206,7 +142,6 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
         spans.push_back(span);
     };
 
-    
     for (uint32_t i = workStartIndex + 1u; i < workEndIndex; i++) {
         const VPoint& p1 = flatPoints[i];
         int32_t y1 = RoundDownToTile(p1.y);
@@ -269,7 +204,6 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
     EmitClose(workEndIndex, spanMinX, spanMaxX, spanTileY, spanLineStartIndex, contourId, spanEntryDirection);
 }
 
-
 std::vector<lyra::SVGUtil::Element> TestElements() {
     VPath p;
     p.MoveTo(100.0, 100.0);
@@ -302,7 +236,7 @@ int main() {
     std::vector<uint32_t> colors(elements.size());
 
     double avgTime = 0.0f;
-    uint32_t iterations = 20000;
+    uint32_t iterations = 1000;
 
     std::vector<Span> spans;
     BitArray flatVerbs;
@@ -330,10 +264,7 @@ int main() {
         spans.reserve(spansAllocation);
         atlasIndices.reserve(atlasIndicesAllocation);
     
-        AtlasManager atlasManager(IMAGE_WIDTH, IMAGE_HEIGHT);
-        uint32_t estimatedTileArea = 0u;        
         uint32_t lineBaseIndex = 0u;
-
         for (int i = 0; i < elements.size(); i++) {
             auto& el = elements[i];
             // const float transform[6] = {1.2, 0.0, 0.0, 1.2, 0.0, 0.0};
@@ -345,14 +276,14 @@ int main() {
             const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle); 
             uint32_t flatStartIndex = lineBaseIndex;
             lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPointsGlobal, 0.01f, lineBaseIndex);
-            uint32_t spanStartIndex = spans.size();
-            TraverseGrid2(flatStartIndex, lineBaseIndex, flatVerbs, flatPointsGlobal, spans);
-            std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
-                return s0.key < s1.key;
-            });
-            MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasManager, atlasIndices, flatPointsGlobal);
-            colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-                    el.paint.GetFillColor().GetU8ABGR();
+            // uint32_t spanStartIndex = spans.size();
+            // TraverseSpanLines(flatStartIndex, lineBaseIndex, flatVerbs, flatPointsGlobal, spans);
+            // std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+            //     return s0.key < s1.key;
+            // });
+            // MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasIndices, flatPointsGlobal);
+            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+            //         el.paint.GetFillColor().GetU8ABGR();
 
         }
 
@@ -360,15 +291,14 @@ int main() {
         // uint32_t numIndices = indicesGlobal.size();        
         // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
         // renderer.Render(atlasIndices.size(), numDrawSpans, lineBaseIndex);
-        
-        // std::cout << "Used space: " << atlasManager.UsedSpace() << " " << atlasManager.Allocation() << " " << atlasManager.position() << " estimated area: " << estimatedTileArea << " " << gaps * TILE_SIZE << std::endl;
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
-        std::cout << ms_double.count() << std::endl;
+        // std::cout << ms_double.count() << std::endl;
+        // std::cout << lineBaseIndex << " " << drawSpansGlobal.size() << " " << indicesGlobal.size() << std::endl;
         avgTime += ms_double.count();
     }
 
-    renderer.Dispose();
+    // renderer.Dispose();
     std::cout << "avgTime: " << avgTime / iterations << std::endl;
     return 0;
 }

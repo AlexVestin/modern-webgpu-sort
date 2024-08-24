@@ -286,7 +286,7 @@ void Renderer::Upload(
         CreateBindGroup();
     }
 
-    // std::cout << "Uploaded: " << uploadAmount << std::endl;
+    std::cout << "Uploaded: " << uploadAmount << std::endl;
 }
 
 void Renderer::Dispose() {

@@ -66,7 +66,7 @@ fn area(p0: vec2f, p1: vec2f, xy: vec2f) -> f32 {
 @vertex
 fn vert_main(@builtin(vertex_index) VertexIndex : u32) -> VSOutput {
     var out: VSOutput;
-    let quad_id = VertexIndex / num_verts;
+    let quad_id = VertexIndex / 6u;
 
     let draw_span = draw_spans[quad_id];
     let tl = unpack_position(draw_span.position);
@@ -117,5 +117,5 @@ fn frag_main(@builtin(position) pos: vec4f, @location(0) @interpolate(flat) info
         }
     }
     a = min(abs(a - 2.0 * round(0.5 * a)), 1.0); 
-    return unpack4x8unorm(info.y) * a * 0.8 + vec4f(0.2, 0.0, 0.0, 0.3);
+    return unpack4x8unorm(info.y) * a;// * 0.8 + vec4f(0.2, 0.0, 0.0, 0.3);
 }

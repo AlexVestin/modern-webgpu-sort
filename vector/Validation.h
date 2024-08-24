@@ -12,7 +12,6 @@
 #include "Flatten.h"
 #include "path/SVGUtil.h"
 
-#include "../wgpu/NativeUtils.h"
 #include "../ComputeUtil.h"
 #include "defs.h"
 

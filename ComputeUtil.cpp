@@ -94,8 +94,10 @@ namespace ComputeUtil  {
     }
 
     void BusyWaitDevice(const std::unique_ptr<wgpu::Instance>& instance, const wgpu::Device& device) {
+        #ifndef __EMSCRIPTEN__
         auto c = device.GetQueue().OnSubmittedWorkDone(wgpu::CallbackMode::AllowProcessEvents, [](wgpu::QueueWorkDoneStatus status) {});
         instance->WaitAny(c, 0);
+        #endif
     }
     
     wgpu::ComputePassEncoder CreateTimestampedComputePass(const wgpu::CommandEncoder& encoder, const wgpu::QuerySet& querySet, uint32_t index) {

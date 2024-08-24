@@ -340,8 +340,6 @@ uint32_t FlattenCommands2(
     outPoints[lineIndex] = p0;
     outVerbs.SetBit(lineIndex++);
     
-    uint32_t nextCapacityCheckLevel = lineIndex + (lineIndex & 1023u);
-
     size_t i = 1;
     const float tolerance4  = tolerance * 4.0f;
     const float sqrt_of_8 = 2.82842712475f;
@@ -427,14 +425,10 @@ uint32_t FlattenCommands2(
                 i += 3u;
                 break;
             }
-
             default: {
-                std::cerr << "Verb was: " << static_cast<uint32_t>(verbs[i]) << " At position: " << i << " buffer size: " << points.size()
-                          << std::endl;
-                exit(1);
+                std::cerr << "Unknown verb: " << static_cast<uint32_t>(verbs[j]) << ", skipping." << std::endl;
             }
         }
-
 
         if (outPoints.capacity() - lineIndex <= (1u << 18u)) {
             outPoints.reserve(outPoints.capacity() * 2);
