@@ -89,7 +89,7 @@ public:
 
     wgpu::Texture CreateTexture(const wgpu::TextureFormat format) const;
 
-    void Render(uint32_t atlasIndices, uint32_t drawSpans);
+    void Render(uint32_t atlasIndices, uint32_t drawSpans, uint32_t numPoints);
 
     void WriteAtlasTexture() const;
     void WriteColorTexture() const;
@@ -138,6 +138,7 @@ private:
 
     wgpu::RenderPipeline atlasPipeline;
     wgpu::RenderPipeline drawPipeline;
+    wgpu::RenderPipeline pointsPipeline;
 
     wgpu::Texture atlasTexture;
     wgpu::TextureView atlasTextureView;

@@ -43,11 +43,14 @@ static inline uint32_t Pack24And8(uint32_t lineEndIndex, uint32_t type) {
     return (type << 24u) | (lineEndIndex & 0xffffffu);
 }
 
-struct AtlasLine {
-    uint32_t lineIndex;
-    uint32_t atlasPosition;
-};
-
+static inline int32_t SpanTypeToBackdrop(uint32_t direction) {
+    if (direction == DIRECTION_UP) {
+        return 1;
+    } else if(direction == DIRECTION_DOWN) {
+        return -1;
+    }
+    return 0;
+}
 
 struct AtlasManager {
     AtlasManager(uint32_t width, uint32_t height) : atlasWidth{width}, atlasHeight{height} { }
@@ -118,7 +121,7 @@ struct AtlasManager {
 
 void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vector<uint32_t>& indices, std::vector<DrawSpan>& drawSpans, uint32_t pathId, AtlasManager& atlasManager, std::vector<uint32_t>& atlasIndices, const std::vector<VPoint>& flatPoints) {
     int32_t lastBackdrop = 0;
-    auto EmitSpan = [&](uint32_t from, uint32_t to, int32_t x, int32_t y, int32_t maxX, int32_t backdrop, uint32_t spanLineCount) {
+    auto EmitSpan = [&drawSpans, &lastBackdrop, pathId](uint32_t from, uint32_t to, int32_t x, int32_t y, int32_t maxX, int32_t backdrop) {
         if (maxX < 0 || y < 0 || y >= IMAGE_HEIGHT || x >= IMAGE_WIDTH) {
             return;
         }
@@ -126,121 +129,57 @@ void MergeSpans(uint32_t spanStartId, const std::vector<Span>& spans, std::vecto
         DrawSpan ds;
         ds.pathId = (static_cast<uint32_t>((maxX + 1u)) << 16u) | pathId;
         ds.position = PackPosition(x, y);
-        ds.lineStartIndex = indices.size();
-        for (int j = from; j < to; j++) {
-            const auto& s = spans[j];
-            uint32_t numLines = s.NumLines();            
-            for (int k = 0; k < ComputeUtil::div_up(numLines, 256); k++) {
-                uint32_t index = s.lineStartIndex + k * 256u;
-                indices.push_back((index & 0xffffffu) | (numLines << 24u));
-            }
-        }
-        ds.lineEndIndex = Pack24And8(indices.size(),  static_cast<uint32_t>(lastBackdrop + 127));
+        ds.lineStartIndex = from;
+        ds.lineEndIndex = Pack24And8(to,  static_cast<uint32_t>(lastBackdrop + 127));
         lastBackdrop = backdrop;
-
-        // ds.lineIndices = uint2(~0u);
-        // uint2 atlasPosition;
-        // uint32_t atlasPositionPacked = ~0u;
-        // if (spanLineCount > 3) {
-        //     atlasManager.Claim((maxX + 1u) - x, TILE_SIZE, atlasPosition);
-        //     atlasPositionPacked = PackPosition(atlasPosition.x, atlasPosition.y);
-        // }
-        // uint32_t bdPacked = static_cast<uint32_t>(lastBackdrop + 127);
-        // lastBackdrop = backdrop;
-        // if (spanLineCount == 0u) {
-        //     ds.backdropLine0Packed = Pack24And8(0xffffffu, bdPacked);
-        //     drawSpans.push_back(ds);
-        //     return;
-        // }
-        // const Span& s0 = spans[from];
-        // ds.backdropLine0Packed = Pack24And8(s0.lineStartIndex, bdPacked);
-        // uint32_t firstOffset = 1u;
-        // uint32_t lineIndex = 0u;
-        // if (s0.NumLines() == 1u) {
-        //     from++;
-        // }
-        // for (int j = from; j < to; j++) {
-        //     const auto& s = spans[j];
-        //     for (uint32_t k = s.lineStartIndex + firstOffset; k < s.GetLineEndIndex(); k++) {
-        //         if (lineIndex < 2u) {
-        //             ds.lineIndices[lineIndex++] = k;   
-        //         } else {
-        //             atlasIndices.push_back({k, atlasPositionPacked});
-        //         }   
-        //     }
-        //     firstOffset = 0u;
-        // } 
-
         drawSpans.push_back(ds);
     };
 
-    
-    uint32_t spanId = spanStartId;
-    const Span& span = spans[spanId];
+    const Span& span = spans[spanStartId];
     int32_t maxSpanX = span.spanMaxX;
-    uint32_t t = span.GetType();
-    int32_t backdrop = 0;
-    if (t == DIRECTION_UP) {
-        backdrop++;
-    } else if(t == DIRECTION_DOWN) {
-        backdrop--;
-    }
-
-    int2 sp = UnpackPosition(span.key);
-    int32_t currentSpanX = sp.x;
-    int32_t currentSpanY = sp.y;
-
+    int32_t backdrop = SpanTypeToBackdrop(span.GetType());
+    int2 spanPosition = UnpackPosition(span.key);
     uint32_t spanLineCount = span.NumLines();
+    uint32_t lastIndexBase = indices.size();
+
+    for (int k = 0; k <= spanLineCount; k += 256u) {
+        indices.push_back(((span.lineStartIndex + k) & 0xffffffu) | (spanLineCount << 24u));
+    }
     
     for (int i = spanStartId + 1u; i < spans.size(); i++) {
         const Span& newSpan = spans[i];
+        int2 newSpanPosition = UnpackPosition(newSpan.key);
 
-        int2 nsp = UnpackPosition(newSpan.key);
-        int32_t newSpanY  = nsp.y;
-        int32_t newSpanX  = nsp.x;
-
-        bool canSplit = (newSpanX > maxSpanX) && (backdrop == 0) && spanLineCount > 1;
+        bool canSplit = (newSpanPosition.x > maxSpanX) && (backdrop == 0);
         uint32_t lineCount = newSpan.NumLines();
-        if ((newSpanY != currentSpanY) || canSplit) {
-           
-            EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX, backdrop, spanLineCount);
-            
+        if ((newSpanPosition.y != spanPosition.y) || canSplit) {
+            EmitSpan(lastIndexBase, indices.size(), spanPosition.x, spanPosition.y, maxSpanX, backdrop);
+            lastIndexBase = indices.size();
+
             // set new span
-            currentSpanY = newSpanY;
-            currentSpanX = newSpanX;
+            spanPosition = newSpanPosition;
             maxSpanX = newSpan.spanMaxX;
             backdrop = 0;
             lastBackdrop = 0;
-            spanLineCount = lineCount;
-            spanId = i;
         } else {
-            if (maxSpanX < newSpanX && currentSpanX != newSpanX) {
-                uint32_t gap = newSpanX - maxSpanX;
-                if (gap > 2) {
-                    // previous
-                    EmitSpan(spanId, i, currentSpanX, currentSpanY, maxSpanX, backdrop, spanLineCount);
-                    
-                    // gap
-                    EmitSpan(i, i, maxSpanX + 1u, currentSpanY, newSpanX - 1u, backdrop, 0u);
-                    
-                    currentSpanX = newSpanX;
-                    spanLineCount = 0u;
-                    spanId = i;
-                }   
+            if (newSpanPosition.x - maxSpanX > 1) {
+                // previous
+                EmitSpan(lastIndexBase, indices.size(), spanPosition.x, spanPosition.y, maxSpanX, backdrop);
+                lastIndexBase = indices.size();
+                // gap
+                EmitSpan(lastIndexBase, lastIndexBase, maxSpanX + 1u, spanPosition.y, newSpanPosition.x - 1u, backdrop);
+                spanPosition.x = newSpanPosition.x;
             }
-            spanLineCount += lineCount;
             maxSpanX = std::max(maxSpanX, newSpan.spanMaxX);
         }
 
-        uint32_t t = newSpan.GetType();
-        if (t == DIRECTION_UP) {
-            backdrop++;
-        } else if(t == DIRECTION_DOWN) {
-            backdrop--;
+        backdrop += SpanTypeToBackdrop(newSpan.GetType());
+        for (uint32_t k = 0; k <= lineCount; k += 256u) {
+            indices.push_back(((newSpan.lineStartIndex + k) & 0xffffffu) | (lineCount << 24u));
         }
     }
     
-    EmitSpan(spanId, spans.size(), currentSpanX, currentSpanY, maxSpanX, backdrop, spanLineCount);
+    EmitSpan(lastIndexBase, indices.size(), spanPosition.x, spanPosition.y, maxSpanX, backdrop);
 }
 
 void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArray& flatVerbs, const std::vector<VPoint>& flatPoints, std::vector<Span>& spans) {
@@ -268,7 +207,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
     };
 
     
-    for (int i = workStartIndex + 1; i < workEndIndex; i++) {
+    for (uint32_t i = workStartIndex + 1u; i < workEndIndex; i++) {
         const VPoint& p1 = flatPoints[i];
         int32_t y1 = RoundDownToTile(p1.y);
 
@@ -276,7 +215,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
             if (spanTileY == y1) {
                 spanMaxX = std::max(spanMaxX, p1.x);
                 spanMinX = std::min(spanMinX, p1.x);
-                p0 = p1;
+                p0 = p1;    
                 continue;
             }
             
@@ -291,10 +230,10 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
             spanMaxX = std::max(spanMaxX, xv1);
             spanMinX = std::min(spanMinX, xv1);
 
-            if (spanTileY >= 0 && spanTileY < IMAGE_HEIGHT && spanMinX < IMAGE_WIDTH && spanMaxX >= 0.0f) {
+            // if (spanTileY >= 0 && spanTileY < IMAGE_HEIGHT && spanMinX < IMAGE_WIDTH && spanMaxX >= 0.0f) {
                 uint32_t type = (lineDirection == spanEntryDirection || spanEntryDirection == 0u) ? lineDirection : 0;
                 spans.push_back(Span(PackPosition(std::floor(spanMinX), spanTileY), std::floor(spanMaxX), spanLineStartIndex, Pack24And8(i, type)));
-            }
+            // }
             
             spanEntryDirection = lineDirection;
             spanLineStartIndex = i;
@@ -306,9 +245,9 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
                 xv1 = p0.x + (static_cast<float>(spanTileY + offset) - p0.y) * slope;
                 spanMinX = std::min(xv0, xv1);
                 spanMaxX = std::max(xv0, xv1);
-                if (spanTileY >= 0 && spanTileY < IMAGE_HEIGHT && spanMinX < IMAGE_WIDTH && spanMaxX >= 0.0f) {
+                // if (spanTileY >= 0 && spanTileY < IMAGE_HEIGHT && spanMinX < IMAGE_WIDTH && spanMaxX >= 0.0f) {
                     spans.push_back(Span(PackPosition(std::floor(spanMinX), spanTileY), std::floor(spanMaxX), i, Pack24And8(i, lineDirection)));
-                }
+                // }
                 spanTileY += step;
             }
 
@@ -355,7 +294,7 @@ int main() {
     buffer << t.rdbuf();
     auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
 
-    const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
+    const float transform[6] = {2.0, 0.0, 0.0, 2.0, 0.0, 0.0};
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
     // auto elements = TestElements();
 
@@ -397,7 +336,7 @@ int main() {
 
         for (int i = 0; i < elements.size(); i++) {
             auto& el = elements[i];
-            // const float transform[6] = {v, 0.0, 0.0, v, 0.0, 0.0};
+            // const float transform[6] = {1.2, 0.0, 0.0, 1.2, 0.0, 0.0};
             // el.path.SetTransform(transform);
             // el.path.Retransform();
 
@@ -414,12 +353,13 @@ int main() {
             MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasManager, atlasIndices, flatPointsGlobal);
             colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
                     el.paint.GetFillColor().GetU8ABGR();
+
         }
 
-        uint32_t numDrawSpans = drawSpansGlobal.size();
-        uint32_t numIndices = indicesGlobal.size();        
-        renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
-        renderer.Render(atlasIndices.size(), numDrawSpans);
+        // uint32_t numDrawSpans = drawSpansGlobal.size();
+        // uint32_t numIndices = indicesGlobal.size();        
+        // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+        // renderer.Render(atlasIndices.size(), numDrawSpans, lineBaseIndex);
         
         // std::cout << "Used space: " << atlasManager.UsedSpace() << " " << atlasManager.Allocation() << " " << atlasManager.position() << " estimated area: " << estimatedTileArea << " " << gaps * TILE_SIZE << std::endl;
         h_end = std::chrono::high_resolution_clock::now();

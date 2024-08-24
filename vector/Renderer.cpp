@@ -92,6 +92,17 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
                                     .bindGroupLayouts = {drawBindGroupLayout}},
                                     "AtlasPipeline");
 
+    std::string pointShader = ReadTextFile("vector/shaders/points.wgsl");
+    wgpu::ShaderModule pointShaderModule = utils::CreateShaderModule(device, pointShader.c_str(), "PointShader");
+    pointsPipeline = CreateRenderPipeline(device,
+                                    {.vertModule = pointShaderModule,
+                                    .fragModule = pointShaderModule,
+                                    .blendState = &lyra::blend::Src,
+                                    .targetFormat = wgpu::TextureFormat::RGBA8Unorm,
+                                    .topology = wgpu::PrimitiveTopology::PointList,
+                                    .bindGroupLayouts = {drawBindGroupLayout}},
+                                    "PointPpeline");
+
     
     wgpu::SamplerDescriptor samplerDescriptor;
     samplerDescriptor.minFilter = wgpu::FilterMode::Nearest;
@@ -159,7 +170,7 @@ wgpu::Texture Renderer::CreateTexture(const wgpu::TextureFormat format) const {
     return device.CreateTexture(&descriptor);
 }
 
-void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
+void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans, uint32_t numPoints) {
     if (atlasIndices + drawSpans == 0u) {
         return;
     }
@@ -192,6 +203,10 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
         drawPass.SetBindGroup(1, atlasBindGroup);
         drawPass.SetPipeline(drawPipeline);
         drawPass.Draw(drawSpans * 6u);
+
+        // drawPass.SetPipeline(pointsPipeline);
+        // drawPass.Draw(numPoints);
+
         drawPass.End();
         queryContainer.Resolve(encoder);
     }

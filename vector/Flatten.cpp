@@ -2,7 +2,7 @@
 #include "Flatten.h"
 
 const float sqrt_of_8 = 2.82842712475f;
-const float sqrt_of_8_tol = 2.82842712475f * 0.175f;
+const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
 
 
 // y is in range [0, height - TILE_SIZE]
@@ -352,6 +352,10 @@ uint32_t FlattenCommands2(
                 break;
 
             case VPathVerb::kMove:
+                if (first != p0) {
+                    outPoints[lineIndex++] = first;
+                }
+    
                 first = points[i];
                 p0 = first;
                 outPoints[lineIndex] = first;
@@ -436,6 +440,10 @@ uint32_t FlattenCommands2(
             outPoints.reserve(outPoints.capacity() * 2);
             outVerbs.reserve(outVerbs.capacity() * 2); 
         }
+    }
+
+    if (first != p0) {
+        outPoints[lineIndex++] = first;
     }
 
     return lineIndex;
