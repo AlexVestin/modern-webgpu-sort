@@ -46,6 +46,8 @@ if (NOT EMSCRIPTEN)
         "wgpu/NativeUtils.cpp"
         "wgpu/DawnInfo.cpp"
         "vector/Renderer.cpp"
+        "wgpu/ComboRenderPipelineDescriptor.cpp"
+        "wgpu/WGPUHelpers.cpp"
     )
   add_executable(${PROJECT_NAME} ${VECTOR_SOURCES})
 endif()
