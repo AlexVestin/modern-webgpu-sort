@@ -255,7 +255,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
     uint32_t spanLineStartIndex = workStartIndex + 1u;
     uint32_t contourId = spans.size();
     
-    auto EmitClose = [&spans, contourId, spanMinX, spanEntryDirection, spanTileY, spanLineStartIndex, spanMaxX](uint32_t i) {
+    auto EmitClose = [&spans](uint32_t i, float spanMinX, float spanMaxX, int32_t spanTileY, uint32_t spanLineStartIndex, uint32_t contourId, uint32_t spanEntryDirection) {
         Span span;
         span.key = PackPosition(std::floor(spanMinX), spanTileY);
         span.lineStartIndex = spanLineStartIndex;
@@ -315,7 +315,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
             spanMinX = std::min(xv1, p1.x);
             spanMaxX = std::max(xv1, p1.x);
         } else {
-            EmitClose(i);
+            EmitClose(i, spanMinX, spanMaxX, spanTileY, spanLineStartIndex, contourId, spanEntryDirection);
             spanLineStartIndex = i + 1;
             spanTileY = y1;
             spanEntryDirection = 0u;
@@ -327,7 +327,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
         p0 = p1;
     }
 
-    EmitClose(workEndIndex);
+    EmitClose(workEndIndex, spanMinX, spanMaxX, spanTileY, spanLineStartIndex, contourId, spanEntryDirection);
 }
 
 
@@ -416,10 +416,10 @@ int main() {
                     el.paint.GetFillColor().GetU8ABGR();
         }
 
-        // uint32_t numDrawSpans = drawSpansGlobal.size();
-        // uint32_t numIndices = indicesGlobal.size();        
-        // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
-        // renderer.Render(atlasIndices.size(), numDrawSpans);
+        uint32_t numDrawSpans = drawSpansGlobal.size();
+        uint32_t numIndices = indicesGlobal.size();        
+        renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+        renderer.Render(atlasIndices.size(), numDrawSpans);
         
         // std::cout << "Used space: " << atlasManager.UsedSpace() << " " << atlasManager.Allocation() << " " << atlasManager.position() << " estimated area: " << estimatedTileArea << " " << gaps * TILE_SIZE << std::endl;
         h_end = std::chrono::high_resolution_clock::now();
