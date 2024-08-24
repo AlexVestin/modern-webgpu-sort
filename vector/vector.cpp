@@ -255,7 +255,7 @@ void TraverseGrid2(uint32_t workStartIndex, uint32_t workEndIndex, const BitArra
     uint32_t spanLineStartIndex = workStartIndex + 1u;
     uint32_t contourId = spans.size();
     
-    auto EmitClose = [&](uint32_t i) {
+    auto EmitClose = [&spans, contourId, spanMinX, spanEntryDirection, spanTileY, spanLineStartIndex, spanMaxX](uint32_t i) {
         Span span;
         span.key = PackPosition(std::floor(spanMinX), spanTileY);
         span.lineStartIndex = spanLineStartIndex;
@@ -345,7 +345,7 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
 
 int main() {
     using std::chrono::milliseconds;
-    std::ifstream t("ghost.svg");
+    std::ifstream t("paper-1.svg");
     
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
@@ -355,7 +355,7 @@ int main() {
     buffer << t.rdbuf();
     auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
 
-    const float transform[6] = {2.0, 0.0, 0.0, 2.0, 0.0, 0.0};
+    const float transform[6] = {1.0, 0.0, 0.0, 1.0, 0.0, 0.0};
     auto elements = lyra::SVGUtil::ParseSVG(img, transform);
     // auto elements = TestElements();
 
@@ -416,11 +416,11 @@ int main() {
                     el.paint.GetFillColor().GetU8ABGR();
         }
 
-
-        uint32_t numDrawSpans = drawSpansGlobal.size();
-        uint32_t numIndices = indicesGlobal.size();        
-        renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
-        renderer.Render(atlasIndices.size(), numDrawSpans);
+        // uint32_t numDrawSpans = drawSpansGlobal.size();
+        // uint32_t numIndices = indicesGlobal.size();        
+        // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+        // renderer.Render(atlasIndices.size(), numDrawSpans);
+        
         // std::cout << "Used space: " << atlasManager.UsedSpace() << " " << atlasManager.Allocation() << " " << atlasManager.position() << " estimated area: " << estimatedTileArea << " " << gaps * TILE_SIZE << std::endl;
         h_end = std::chrono::high_resolution_clock::now();
         std::chrono::duration<double, std::milli> ms_double = h_end - h_start;

@@ -179,13 +179,13 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
     }
 
     if (drawSpans > 0u) {
-        // wgpu::RenderPassTimestampWrites writes;
-        // writes.beginningOfPassWriteIndex = 0;
-        // writes.endOfPassWriteIndex = 1;
-        // writes.querySet = queryContainer.querySet;
+        wgpu::RenderPassTimestampWrites writes;
+        writes.beginningOfPassWriteIndex = 0;
+        writes.endOfPassWriteIndex = 1;
+        writes.querySet = queryContainer.querySet;
 
         utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
-        // drawDescriptor.timestampWrites = &writes;
+        drawDescriptor.timestampWrites = &writes;
         drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
         wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
         drawPass.SetBindGroup(0, bindGroup);
@@ -193,7 +193,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
         drawPass.SetPipeline(drawPipeline);
         drawPass.Draw(drawSpans * 6u);
         drawPass.End();
-        // queryContainer.Resolve(encoder);
+        queryContainer.Resolve(encoder);
     }
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
@@ -201,8 +201,7 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans) {
 
     // utils::BusyWaitDevice(device);
     // queryContainer.Read(device);
-
-    // std::cout << queryContainer.GetTotal() << std::endl;
+    // std::cout << "gpu: " << queryContainer.GetTotalMs() << std::endl;
     // utils::BusyWaitDevice(device);
     // WriteAtlasTexture();
     // WriteColorTexture();

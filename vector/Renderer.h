@@ -45,8 +45,6 @@ struct QueryContainer {
         for (int i = 0; i < numQueries / 2; i++) {
             uint64_t t0 = queryData[i * 2];
             uint64_t t1 = queryData[i * 2 + 1];
-
-            std::cout << "queries: " << t0 << " " << t1 << " " << t0 - t1  << std::endl;
             gpu_times[i] += t1 - t0;
         }
     }
@@ -56,11 +54,19 @@ struct QueryContainer {
     uint64_t GetTotal() const {
         uint64_t total = 0u;
         for (int i = 0; i < numQueries; i++) {
-            
             total += gpu_times[i];
         }
         return total;
     }
+
+    double GetTotalMs() const {
+        uint64_t total = 0u;
+        for (int i = 0; i < numQueries; i++) {
+            total += gpu_times[i];
+        }
+        return total / 1000000.0;
+    }
+
 
     void Reset() {
         for (int i = 0; i < gpu_times.size(); i++) {
