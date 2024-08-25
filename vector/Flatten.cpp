@@ -2,7 +2,7 @@
 #include "Flatten.h"
 
 const float sqrt_of_8 = 2.82842712475f;
-const float sqrt_of_8_tol = 2.82842712475f * 0.1f;
+const float sqrt_of_8_tol = 2.82842712475f * 0.175f;
 
 
 // y is in range [0, height - TILE_SIZE]

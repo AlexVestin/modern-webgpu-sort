@@ -17,11 +17,20 @@
 #include "RendererUtil.h"
 
 #include "path/VPoint.h"
-#include "../wgpu/NativeUtils.h"
 #include "../ComputeUtil.h"
 #include "../wgpu/ComboRenderPipelineDescriptor.h"
 #include "../wgpu/Blends.h"
 #include "RendererUtil.h"
+
+#ifndef __EMSCRIPTEN__
+#include "../wgpu/NativeUtils.h"
+#else 
+#include <emscripten/html5_webgpu.h>
+extern "C" {
+    WGPUSurface getSurface();
+} 
+#endif
+
 
 
 struct Uniforms {
@@ -40,7 +49,7 @@ std::string ReadTextFile(const std::string& path) {
     std::ifstream t(path.c_str());
     
     if (t.fail()) {
-        std::cerr << "Failed to find file" << std::endl;
+        std::cerr << "Failed to find file: " << path << std::endl;
         exit(1);
     }
     std::stringstream buffer;
@@ -48,7 +57,9 @@ std::string ReadTextFile(const std::string& path) {
     return buffer.str();
 }
 
-Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasWidth}, atlasHeight{atlasHeight} {
+void Renderer::Init(uint32_t atlasWidth, uint32_t atlasHeight) {
+    this->atlasWidth = atlasWidth;
+    this->atlasHeight = atlasHeight;
     InitDevice();
 
     auto doubleStage = wgpu::ShaderStage::Vertex | wgpu::ShaderStage::Fragment;
@@ -70,7 +81,7 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
     atlasTexture = CreateTexture(atlasFormat);
     atlasTextureView = atlasTexture.CreateView();
 
-    drawTexture = CreateTexture(wgpu::TextureFormat::RGBA8Unorm);
+    drawTexture = CreateTexture(wgpu::TextureFormat::BGRA8Unorm);
     drawTextureView = drawTexture.CreateView();
 
     // Create empty buffers
@@ -80,17 +91,15 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
     drawSpansBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "DrawSpansBuffer");
     atlasIndicesBuffer  = utils::CreateBuffer(device, 4, copyDstUsage, "AtlasIndicesBuffer");
 
-    textureDataBuffer = utils::CreateBuffer(device, IMAGE_WIDTH * IMAGE_HEIGHT * sizeof(float), copySrcUsage, "CopyTextureBuffer");
-
-    std::string atlasShader = ReadTextFile("vector/shaders/atlas.wgsl");
-    wgpu::ShaderModule atlasShaderModule = utils::CreateShaderModule(device, atlasShader.c_str(), "AtlasShader");
-    atlasPipeline = CreateRenderPipeline(device,
-                                    {.vertModule = atlasShaderModule,
-                                    .fragModule = atlasShaderModule,
-                                    .blendState = &lyra::blend::Additive,
-                                    .targetFormat = atlasFormat,
-                                    .bindGroupLayouts = {drawBindGroupLayout}},
-                                    "AtlasPipeline");
+    // std::string atlasShader = ReadTextFile("vector/shaders/atlas.wgsl");
+    // wgpu::ShaderModule atlasShaderModule = utils::CreateShaderModule(device, atlasShader.c_str(), "AtlasShader");
+    // atlasPipeline = CreateRenderPipeline(device,
+    //                                 {.vertModule = atlasShaderModule,
+    //                                 .fragModule = atlasShaderModule,
+    //                                 .blendState = &lyra::blend::Additive,
+    //                                 .targetFormat = atlasFormat,
+    //                                 .bindGroupLayouts = {drawBindGroupLayout}},
+    //                                 "AtlasPipeline");
 
     std::string pointShader = ReadTextFile("vector/shaders/points.wgsl");
     wgpu::ShaderModule pointShaderModule = utils::CreateShaderModule(device, pointShader.c_str(), "PointShader");
@@ -98,7 +107,7 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
                                     {.vertModule = pointShaderModule,
                                     .fragModule = pointShaderModule,
                                     .blendState = &lyra::blend::Src,
-                                    .targetFormat = wgpu::TextureFormat::RGBA8Unorm,
+                                    .targetFormat = wgpu::TextureFormat::BGRA8Unorm,
                                     .topology = wgpu::PrimitiveTopology::PointList,
                                     .bindGroupLayouts = {drawBindGroupLayout}},
                                     "PointPpeline");
@@ -116,7 +125,7 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
                                     {.vertModule = drawShaderModule,
                                     .fragModule = drawShaderModule,
                                     .blendState = &lyra::blend::OneMinusSrcAlpha,
-                                    .targetFormat = wgpu::TextureFormat::RGBA8Unorm,
+                                    .targetFormat = wgpu::TextureFormat::BGRA8Unorm,
                                     .bindGroupLayouts = {drawBindGroupLayout, atlasBindGroupLayout}},
                                     "DrawPipeline");
 
@@ -131,8 +140,8 @@ Renderer::Renderer(uint32_t atlasWidth, uint32_t atlasHeight): atlasWidth{atlasW
 }
 
 void Renderer::InitDevice() {
+    #ifndef __EMSCRIPTEN__
     dawnProcSetProcs(&dawn::native::GetProcs());
-
     std::vector<const char*> enableToggleNames = {"allow_unsafe_apis", "dump_shaders"};
     std::vector<const char*> disabledToggleNames = {};
 
@@ -154,6 +163,30 @@ void Renderer::InitDevice() {
 
     wgpu::Adapter adapter = NativeUtils::SetupAdapter(instance);
     device = NativeUtils::SetupDevice(instance, adapter);
+    #else
+
+    device = wgpu::Device::Acquire(emscripten_webgpu_get_device());
+    
+    WGPUSurfaceDescriptorFromCanvasHTMLSelector canvDesc = {};
+	canvDesc.chain.sType = WGPUSType_SurfaceDescriptorFromCanvasHTMLSelector;
+	canvDesc.selector = "canvas";
+	WGPUSurfaceDescriptor surfDesc = {};
+	surfDesc.nextInChain = reinterpret_cast<WGPUChainedStruct*>(&canvDesc);
+	surface = wgpu::Surface::Acquire(wgpuInstanceCreateSurface(nullptr, &surfDesc));
+
+    // wgpu::SurfaceCapabilities capabilities;
+    // surface.GetCapabilities(adapter, &capabilities);
+    // wgpu::TextureFormat format = capabilities.formats[0];
+
+    wgpu::SurfaceConfiguration config{
+        .device = device, 
+        .format = wgpu::TextureFormat::BGRA8Unorm, 
+        .width = IMAGE_WIDTH, 
+        .height = IMAGE_HEIGHT
+    };
+
+    surface.Configure(&config);
+    #endif
 }
 
 
@@ -195,7 +228,13 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans, uint32_t numPoi
         writes.endOfPassWriteIndex = 1;
         writes.querySet = queryContainer.querySet;
 
+        #ifdef __EMSCRIPTEN__
+        wgpu::SurfaceTexture surfaceTexture;
+        surface.GetCurrentTexture(&surfaceTexture);
+        utils::ComboRenderPassDescriptor drawDescriptor({surfaceTexture.texture.CreateView()});
+        #else 
         utils::ComboRenderPassDescriptor drawDescriptor({drawTextureView});
+        #endif
         drawDescriptor.timestampWrites = &writes;
         drawDescriptor.cColorAttachments[0].loadOp = wgpu::LoadOp::Clear;
         wgpu::RenderPassEncoder drawPass = encoder.BeginRenderPass(&drawDescriptor);
@@ -213,6 +252,9 @@ void Renderer::Render(uint32_t atlasIndices, uint32_t drawSpans, uint32_t numPoi
 
     wgpu::CommandBuffer commandBuffer = encoder.Finish();
     device.GetQueue().Submit(1, &commandBuffer);
+
+    // std::cout << "Drawn: " << drawSpans << std::endl;
+    // surface.Present();
 
     // utils::BusyWaitDevice(device);
     // queryContainer.Read(device);
@@ -286,7 +328,7 @@ void Renderer::Upload(
         CreateBindGroup();
     }
 
-    std::cout << "Uploaded: " << uploadAmount << std::endl;
+    // std::cout << "Uploaded: " << uploadAmount << std::endl;
 }
 
 void Renderer::Dispose() {

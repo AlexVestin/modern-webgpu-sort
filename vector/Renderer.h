@@ -6,7 +6,6 @@
 #include "defs.h"
 
 #include "path/VPoint.h"
-#include "../wgpu/NativeUtils.h"
 #include "../ComputeUtil.h"
 #include "../wgpu/ComboRenderPipelineDescriptor.h"
 #include "../wgpu/Blends.h"
@@ -82,8 +81,8 @@ struct QueryContainer {
 
 class Renderer {
 public:
-    Renderer(uint32_t atlasWidth, uint32_t atlasHeight);
     
+    void Init(uint32_t atlasWidth, uint32_t atlasHeight);
     void InitDevice();
 
 
@@ -130,10 +129,7 @@ private:
     wgpu::Buffer atlasIndicesBuffer;
     wgpu::Buffer uniformBuffer;
 
-    wgpu::Buffer textureDataBuffer;
     wgpu::Device device;
-
-
     bool needsRecreateBindGroup = true;
 
     wgpu::RenderPipeline atlasPipeline;
@@ -160,4 +156,5 @@ private:
     uint32_t uploadAmount = 0u;
 
     QueryContainer queryContainer;
+    wgpu::Surface surface;
 };

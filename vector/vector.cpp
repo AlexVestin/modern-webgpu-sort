@@ -9,12 +9,9 @@
 #include "defs.h"
 #include "Validation.h"
 
-#ifndef __EMSCRIPTEN__
-#include "Renderer.h"
-#endif
-
 #include "Flatten.h"
 #include "path/SVGUtil.h"
+#include "vector.h"
 
 const uint32_t flatPointsAllocation = 1 << 21u;
 const uint32_t spansAllocation = 1 << 18;
@@ -22,30 +19,29 @@ const uint32_t drawSpansAllocation = 1 << 18;
 const uint32_t indicesAllocation = 1 << 18;
 const uint32_t atlasIndicesAllocation = 1 << 21u;
 
-#ifndef __EMSCRIPTEN__
-Renderer renderer(IMAGE_WIDTH, IMAGE_HEIGHT);
-#endif
+Renderer renderer;
+
 
 // y is in range [0, height - TILE_SIZE]
 // x is in range [-inf, width - TILE_SIZE]
 // TODO: clip lines more negative than -32767
-static inline uint32_t PackPosition(int32_t x, int32_t y) {
+uint32_t PackPosition(int32_t x, int32_t y) {
     return (static_cast<uint32_t>(y) << 16u) | (static_cast<uint32_t>(x + 32767) & 0xffffu);
 }
 
-static inline int2 UnpackPosition(uint32_t v) {
+int2 UnpackPosition(uint32_t v) {
   return {static_cast<int32_t>(v & 0xffffu) - 32767, static_cast<int32_t>(v >> 16u)};
 }
 
-static inline int32_t RoundDownToTile(float v) {
+int32_t RoundDownToTile(float v) {
     return static_cast<int32_t>(std::floor(v * TILE_SIZE_DIV)) * TILE_SIZE;
 }
 
-static inline uint32_t Pack24And8(uint32_t lineEndIndex, uint32_t type) {
+uint32_t Pack24And8(uint32_t lineEndIndex, uint32_t type) {
     return (type << 24u) | (lineEndIndex & 0xffffffu);
 }
 
-static inline int32_t SpanTypeToBackdrop(uint32_t direction) {
+int32_t SpanTypeToBackdrop(uint32_t direction) {
     if (direction == DIRECTION_UP) {
         return 1;
     } else if(direction == DIRECTION_DOWN) {
@@ -216,10 +212,9 @@ std::vector<lyra::SVGUtil::Element> TestElements() {
     return { e };
 }
 
-int main() {
-    using std::chrono::milliseconds;
+
+void VectorPathBuilder::Load() {
     std::ifstream t("paper-1.svg");
-    
     if (t.fail()) {
         std::cerr << "Failed to find file" << std::endl;
         exit(1);
@@ -229,73 +224,140 @@ int main() {
     auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
 
     const float transform[6] = {2.0, 0.0, 0.0, 2.0, 0.0, 0.0};
-    auto elements = lyra::SVGUtil::ParseSVG(img, transform);
+    elements = lyra::SVGUtil::ParseSVG(img, transform);
+
+    renderer.Init(IMAGE_WIDTH, IMAGE_HEIGHT);
+}
+
+void VectorPathBuilder::Zoom(float amount) {
+    transform[0] = amount;
+    transform[3] = amount;
+}
+
+void VectorPathBuilder::Move(float x, float y) {
+    transform[4] = x;
+    transform[5] = y;
+}
+
+void VectorPathBuilder::Process() {
+    flatPointsGlobal.clear();
+    drawSpansGlobal.clear();
+    indicesGlobal.clear();
+    colors.clear();
+    flatVerbs.clear();
+    spans.clear();
+
+    drawSpansGlobal.reserve(drawSpansAllocation);
+    indicesGlobal.reserve(indicesAllocation);
+    flatPointsGlobal.reserve(flatPointsAllocation);
+    flatVerbs.reserve(flatPointsAllocation);
+    spans.reserve(spansAllocation);
+    colors.resize(elements.size());
+
+    uint32_t lineBaseIndex = 0u;
+    for (int i = 0; i < elements.size(); i++) {
+        auto& el = elements[i];
+        el.path.SetTransform(transform);
+        el.path.Retransform();
+
+        auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
+        const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
+        const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle); 
+        uint32_t flatStartIndex = lineBaseIndex;
+        lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPointsGlobal, 0.01f, lineBaseIndex);
+        uint32_t spanStartIndex = spans.size();
+        TraverseSpanLines(flatStartIndex, lineBaseIndex, flatVerbs, flatPointsGlobal, spans);
+        std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+            return s0.key < s1.key;
+        });
+        MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasIndices, flatPointsGlobal);
+        colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+                el.paint.GetFillColor().GetU8ABGR();
+
+    }
+
+    uint32_t numDrawSpans = drawSpansGlobal.size();
+    uint32_t numIndices = indicesGlobal.size();    
+
+    renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+    renderer.Render(atlasIndices.size(), numDrawSpans, lineBaseIndex);
+}
+    
+
+int main() {
+    // using std::chrono::milliseconds;
+    // std::ifstream t("paper-1.svg");
+    // if (t.fail()) {
+        // std::cerr << "Failed to find file" << std::endl;
+        // exit(1);
+    // }
+    // std::stringstream buffer;
+    // buffer << t.rdbuf();
+    // auto* img = lyra::SVGUtil::ReadSVG(buffer.str(), "Label");
+    // const float transform[6] = {2.0, 0.0, 0.0, 2.0, 0.0, 0.0};
+    // auto elements = lyra::SVGUtil::ParseSVG(img, transform);
     // auto elements = TestElements();
 
+    // renderer.Init(IMAGE_WIDTH, IMAGE_HEIGHT);
+
+    VectorPathBuilder builder;
+    builder.Load();
+
     std::chrono::high_resolution_clock::time_point h_start, h_end;
-    std::vector<uint32_t> colors(elements.size());
-
     double avgTime = 0.0f;
-    uint32_t iterations = 1000;
+    uint32_t iterations = 3000;
 
-    std::vector<Span> spans;
-    BitArray flatVerbs;
-
-    std::vector<uint32_t> atlasIndices;
-    std::vector<VPoint> flatPointsGlobal;
-    std::vector<uint32_t> indicesGlobal;
-    std::vector<DrawSpan> drawSpansGlobal;
+    // std::vector<uint32_t> colors(elements.size());
+    // std::vector<Span> spans;
+    // BitArray flatVerbs;
+    // std::vector<uint32_t> atlasIndices;
+    // std::vector<VPoint> flatPointsGlobal;
+    // std::vector<uint32_t> indicesGlobal;
+    // std::vector<DrawSpan> drawSpansGlobal;
 
     for (int j = 0; j < iterations; j++) {
         h_start = std::chrono::high_resolution_clock::now();
-        flatPointsGlobal.clear();
-        drawSpansGlobal.clear();
-        indicesGlobal.clear();
-
-        flatVerbs.clear();
-        spans.clear();
-        atlasIndices.clear();
-
-        drawSpansGlobal.reserve(drawSpansAllocation);
-        indicesGlobal.reserve(indicesAllocation);
-        flatPointsGlobal.reserve(flatPointsAllocation);
-
-        flatVerbs.reserve(flatPointsAllocation);
-        spans.reserve(spansAllocation);
-        atlasIndices.reserve(atlasIndicesAllocation);
-    
-        uint32_t lineBaseIndex = 0u;
-        for (int i = 0; i < elements.size(); i++) {
-            auto& el = elements[i];
-            // const float transform[6] = {1.2, 0.0, 0.0, 1.2, 0.0, 0.0};
-            // el.path.SetTransform(transform);
-            // el.path.Retransform();
-
-            auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
-            const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
-            const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle); 
-            uint32_t flatStartIndex = lineBaseIndex;
-            lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPointsGlobal, 0.01f, lineBaseIndex);
-            // uint32_t spanStartIndex = spans.size();
-            // TraverseSpanLines(flatStartIndex, lineBaseIndex, flatVerbs, flatPointsGlobal, spans);
-            // std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
-            //     return s0.key < s1.key;
-            // });
-            // MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasIndices, flatPointsGlobal);
-            // colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
-            //         el.paint.GetFillColor().GetU8ABGR();
-
-        }
-
-        // uint32_t numDrawSpans = drawSpansGlobal.size();
-        // uint32_t numIndices = indicesGlobal.size();        
-        // renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
-        // renderer.Render(atlasIndices.size(), numDrawSpans, lineBaseIndex);
-        h_end = std::chrono::high_resolution_clock::now();
-        std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
-        // std::cout << ms_double.count() << std::endl;
-        // std::cout << lineBaseIndex << " " << drawSpansGlobal.size() << " " << indicesGlobal.size() << std::endl;
-        avgTime += ms_double.count();
+        builder.Process();
+    //     flatPointsGlobal.clear();
+    //     drawSpansGlobal.clear();
+    //     indicesGlobal.clear();
+    //     flatVerbs.clear();
+    //     spans.clear();
+    //     atlasIndices.clear();
+    //     drawSpansGlobal.reserve(drawSpansAllocation);
+    //     indicesGlobal.reserve(indicesAllocation);
+    //     flatPointsGlobal.reserve(flatPointsAllocation);
+    //     flatVerbs.reserve(flatPointsAllocation);
+    //     spans.reserve(spansAllocation);
+    //     uint32_t lineBaseIndex = 0u;
+    //     for (int i = 0; i < elements.size(); i++) {
+    //         auto& el = elements[i];
+    //         // const float transform[6] = {1.2, 0.0, 0.0, 1.2, 0.0, 0.0};
+    //         // el.path.SetTransform(transform);
+    //         // el.path.Retransform();
+    //         auto paintStyle = el.path.IsExpandedStroke() ? PaintStyle::kStroke : PaintStyle::kFill;
+    //         const std::vector<VPoint>& points = el.path.GetPoints(paintStyle);
+    //         const std::vector<VPathVerb>& verbs = el.path.GetVerbs(paintStyle); 
+    //         uint32_t flatStartIndex = lineBaseIndex;
+    //         lineBaseIndex = FlattenCommands2(verbs, points, flatVerbs, flatPointsGlobal, 0.01f, lineBaseIndex);
+    //         uint32_t spanStartIndex = spans.size();
+    //         TraverseSpanLines(flatStartIndex, lineBaseIndex, flatVerbs, flatPointsGlobal, spans);
+    //         std::sort(spans.begin() + spanStartIndex, spans.end(), [](const Span& s0, const Span& s1) {
+    //             return s0.key < s1.key;
+    //         });
+    //         MergeSpans(spanStartIndex, spans, indicesGlobal, drawSpansGlobal, i, atlasIndices, flatPointsGlobal);
+    //         colors[i] = el.path.IsExpandedStroke() ? el.paint.GetStrokeColor().GetU8ABGR() : 
+    //                 el.paint.GetFillColor().GetU8ABGR();
+    //     }
+    //     uint32_t numDrawSpans = drawSpansGlobal.size();
+    //     uint32_t numIndices = indicesGlobal.size();        
+    //     renderer.Upload(colors, flatPointsGlobal, indicesGlobal, drawSpansGlobal, atlasIndices, lineBaseIndex, numIndices, numDrawSpans);
+    //     renderer.Render(atlasIndices.size(), numDrawSpans, lineBaseIndex);
+    //     h_end = std::chrono::high_resolution_clock::now();
+    //     std::chrono::duration<double, std::milli> ms_double = h_end - h_start;
+    //     // std::cout << ms_double.count() << std::endl;
+    //     // std::cout << lineBaseIndex << " " << drawSpansGlobal.size() << " " << indicesGlobal.size() << std::endl;
+    //     avgTime += ms_double.count();
     }
 
     // renderer.Dispose();

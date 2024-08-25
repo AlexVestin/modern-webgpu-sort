@@ -39,15 +39,15 @@ set(VECTOR_SOURCES
   "vector/path/VPath.cpp"
   "vector/path/VPoint.cpp"
   "vector/vector.cpp"
+  "vector/Renderer.cpp"
+  "wgpu/ComboRenderPipelineDescriptor.cpp"
+  "wgpu/WGPUHelpers.cpp"
 )
 
 if (NOT EMSCRIPTEN)
   list(APPEND VECTOR_SOURCES 
         "wgpu/NativeUtils.cpp"
         "wgpu/DawnInfo.cpp"
-        "vector/Renderer.cpp"
-        "wgpu/ComboRenderPipelineDescriptor.cpp"
-        "wgpu/WGPUHelpers.cpp"
     )
   add_executable(${PROJECT_NAME} ${VECTOR_SOURCES})
 endif()

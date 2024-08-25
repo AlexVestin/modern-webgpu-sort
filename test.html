@@ -1,0 +1,95 @@
+<<!DOCTYPE html>
+<!--[if lt IE 7]>      <html class="no-js lt-ie9 lt-ie8 lt-ie7"> <![endif]-->
+<!--[if IE 7]>         <html class="no-js lt-ie9 lt-ie8"> <![endif]-->
+<!--[if IE 8]>         <html class="no-js lt-ie9"> <![endif]-->
+<!--[if gt IE 8]>      <html class="no-js"> <!--<![endif]-->
+<html>
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <title></title>
+        <meta name="description" content="">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <link rel="stylesheet" href="">
+    </head>
+    <body>
+        <div id="run">Waiting run</div>
+        <canvas width="512" height="512" style="background: black;"></canvas>
+        <script type="module">
+            import ManagerInit from "./main.js"
+
+            const el = document.getElementById("run")
+            ManagerInit().then(async (m) => {
+                const adapter = await navigator.gpu.requestAdapter();
+                console.log(adapter);
+                if (!adapter) {
+                    throw new Error("Failed to initialize webgpu adapter.");
+                }
+                const device = await adapter.requestDevice({
+                    requiredFeatures: ["timestamp-query"],
+                    requiredLimits: {"maxStorageBuffersPerShaderStage": 10}
+                });
+                if (!device) {
+                    throw new Error("Failed to initialize webgpu device.");
+                }
+                m.preinitializedWebGPUDevice = device;
+
+                const builder = new m.VectorPathBuilder();
+                builder.Load();
+
+                let zoom = 1.0;
+                let x = 0.0;
+                let y = 0.0;
+
+                window.onkeydown = (e) => {
+                    switch(e.key) {
+                        case "z": 
+                            zoom += 0.1;
+                            break;
+                        case "x": 
+                            zoom -= 0.1;
+                            break;
+                        case "ArrowLeft": 
+                            x += 33.0;
+                            break;
+                        case "ArrowRight":
+                            x -= 33.0;
+                            break;
+                        case "ArrowUp":
+                            y += 33.0;
+                            break;
+                        case "ArrowDown":
+                            y -= 33.0;
+                            break;
+                    }
+                    builder.Move(x, y);
+                    builder.Zoom(zoom);
+                }
+
+                // const t0 = performance.now();
+
+                const animate = () => {
+                    const t0 = performance.now();
+                    builder.Process();
+                    const t1 = performance.now();
+                    el.innerHTML = `cpu time: ${(t1 - t0).toFixed(3)}`;
+                    requestAnimationFrame(animate);
+                }
+
+                requestAnimationFrame(animate);
+
+                // const iterations = 100;
+                // for (let i = 0; i < iterations; i++) {
+                // }
+                // const t1 = performance.now();
+                // console.log(t1 - t0);
+                // el.innerHTML = `processing took: ${(t1 - t0) / iterations}`;
+            })
+        </script>
+        <!--[if lt IE 7]>
+            <p class="browsehappy">You are using an <strong>outdated</strong> browser. Please <a href="#">upgrade your browser</a> to improve your experience.</p>
+        <![endif]-->
+        
+        <script src="" async defer></script>
+    </body>
+</html>

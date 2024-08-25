@@ -16,6 +16,8 @@ using Float32Array = emscripten::val;
 EMSCRIPTEN_BINDINGS(Manager) {
     class_<VectorPathBuilder>("VectorPathBuilder")
         .constructor<>()
+        .function("Zoom", &VectorPathBuilder::Zoom)
+        .function("Move", &VectorPathBuilder::Move)
         .function("Load", &VectorPathBuilder::Load)
         .function("Process", &VectorPathBuilder::Process);
 }
